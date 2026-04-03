@@ -126,28 +126,86 @@ export const getStringArray = (
     return value;
 }
 
-export const getDefaultDomains = (c: Context<HonoCustomType>): string[] => {
-    if (c.env.DEFAULT_DOMAINS == undefined || c.env.DEFAULT_DOMAINS == null) {
-        return getDomains(c);
+const uniqueStrings = (items: string[]): string[] => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const item of items) {
+        const normalized = getStringValue(item).trim().toLowerCase();
+        if (!normalized || seen.has(normalized)) {
+            continue;
+        }
+        seen.add(normalized);
+        result.push(normalized);
     }
-    const domains = getStringArray(c.env.DEFAULT_DOMAINS);
-    return domains || getDomains(c);
+    return result;
 }
 
-export const getDomains = (c: Context<HonoCustomType>): string[] => {
+export const getConfiguredDomains = (c: Context<HonoCustomType>): string[] => {
     if (!c.env.DOMAINS) {
         return [];
     }
-    // check if DOMAINS is an array, if not use json.parse
     if (!Array.isArray(c.env.DOMAINS)) {
         try {
-            return JSON.parse(c.env.DOMAINS);
+            return uniqueStrings(JSON.parse(c.env.DOMAINS));
         } catch (e) {
             console.error("Failed to parse DOMAINS", e);
             return [];
         }
     }
-    return c.env.DOMAINS;
+    return uniqueStrings(c.env.DOMAINS);
+}
+
+export const getConfiguredDefaultDomains = (c: Context<HonoCustomType>): string[] => {
+    if (c.env.DEFAULT_DOMAINS == undefined || c.env.DEFAULT_DOMAINS == null) {
+        return getConfiguredDomains(c);
+    }
+    const domains = uniqueStrings(getStringArray(c.env.DEFAULT_DOMAINS));
+    return domains || getConfiguredDomains(c);
+}
+
+const getDomainLabelExtras = (c: Context<HonoCustomType>): Record<string, string[]> => {
+    const raw = getJsonObjectValue<Record<string, string[]>>(c.env.DOMAIN_LABELS_EXTRA as any) || {};
+    const normalized: Record<string, string[]> = {};
+    for (const [domain, labels] of Object.entries(raw)) {
+        const key = getStringValue(domain).trim().toLowerCase();
+        if (!key) {
+            continue;
+        }
+        normalized[key] = uniqueStrings(Array.isArray(labels) ? labels : []);
+    }
+    return normalized;
+}
+
+const expandOperationalDomains = (c: Context<HonoCustomType>, baseDomains: string[]): string[] => {
+    const normalizedBases = uniqueStrings(baseDomains);
+    if (normalizedBases.length === 0) {
+        return [];
+    }
+
+    const baseLabels = uniqueStrings(getStringArray(c.env.DOMAIN_LABELS));
+    const extraLabels = getDomainLabelExtras(c);
+    const expanded: string[] = [];
+
+    for (const domain of normalizedBases) {
+        const labels = uniqueStrings([...(baseLabels || []), ...(extraLabels[domain] || [])]);
+        if (labels.length === 0) {
+            expanded.push(domain);
+            continue;
+        }
+        for (const label of labels) {
+            expanded.push(`${label}.${domain}`);
+        }
+    }
+
+    return uniqueStrings(expanded);
+}
+
+export const getDefaultDomains = (c: Context<HonoCustomType>): string[] => {
+    return expandOperationalDomains(c, getConfiguredDefaultDomains(c));
+}
+
+export const getDomains = (c: Context<HonoCustomType>): string[] => {
+    return expandOperationalDomains(c, getConfiguredDomains(c));
 }
 
 export const getRandomSubdomainDomains = (c: Context<HonoCustomType>): string[] => {

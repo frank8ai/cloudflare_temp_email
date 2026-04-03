@@ -22,8 +22,8 @@ export default {
 
             "FORWARD_ADDRESS_LIST": utils.getStringArray(c.env.FORWARD_ADDRESS_LIST),
             "SUBDOMAIN_FORWARD_ADDRESS_LIST": utils.getJsonObjectValue<SubdomainForwardAddressList[]>(c.env.SUBDOMAIN_FORWARD_ADDRESS_LIST),
-            "DEFAULT_DOMAINS": utils.getDefaultDomains(c),
-            "DOMAINS": utils.getDomains(c),
+            "DEFAULT_DOMAINS": utils.getConfiguredDefaultDomains(c),
+            "DOMAINS": utils.getConfiguredDomains(c),
             "RANDOM_SUBDOMAIN_DOMAINS": utils.getRandomSubdomainDomains(c),
             "RANDOM_SUBDOMAIN_LENGTH": utils.getIntValue(c.env.RANDOM_SUBDOMAIN_LENGTH, 8),
             "DOMAIN_LABELS": utils.getStringArray(c.env.DOMAIN_LABELS),
