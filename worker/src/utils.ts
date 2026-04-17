@@ -2,6 +2,8 @@ import { Context } from "hono";
 import { createMimeMessage } from "mimetext";
 import { UserSettings, RoleAddressConfig } from "./models";
 import { CONSTANTS } from "./constants";
+import { filterManagedPrefixes } from "./mailbox_domain_policy.ts";
+import { resolveManagedOperationalDomains } from "./managed_mailbox_allocator.ts";
 
 export const getJsonObjectValue = <T = any>(
     value: string | any
@@ -182,30 +184,53 @@ const expandOperationalDomains = (c: Context<HonoCustomType>, baseDomains: strin
         return [];
     }
 
-    const baseLabels = uniqueStrings(getStringArray(c.env.DOMAIN_LABELS));
+    const baseLabels = filterManagedPrefixes(getStringArray(c.env.DOMAIN_LABELS));
     const extraLabels = getDomainLabelExtras(c);
-    const expanded: string[] = [];
+    const expanded = resolveManagedOperationalDomains({
+        rootDomains: normalizedBases,
+        domainLabels: baseLabels,
+        extraLabelsByRootDomain: extraLabels,
+    });
 
-    for (const domain of normalizedBases) {
-        const labels = uniqueStrings([...(baseLabels || []), ...(extraLabels[domain] || [])]);
-        if (labels.length === 0) {
-            expanded.push(domain);
-            continue;
-        }
-        for (const label of labels) {
-            expanded.push(`${label}.${domain}`);
-        }
+    return expanded.length > 0 ? expanded : normalizedBases;
+}
+
+export const getManagedOperationalDomainsFromBaseDomains = (
+    c: Context<HonoCustomType>,
+    baseDomains: string[]
+): string[] => {
+    const normalizedBases = uniqueStrings(baseDomains);
+    if (normalizedBases.length === 0) {
+        return [];
     }
 
-    return uniqueStrings(expanded);
+    const baseLabels = filterManagedPrefixes(getStringArray(c.env.DOMAIN_LABELS));
+    const extraLabels = getDomainLabelExtras(c);
+    return resolveManagedOperationalDomains({
+        rootDomains: normalizedBases,
+        domainLabels: baseLabels,
+        extraLabelsByRootDomain: extraLabels,
+    });
+}
+
+export const getExpandedDomainSetFromBaseDomains = (
+    c: Context<HonoCustomType>,
+    baseDomains: string[]
+): string[] => {
+    const normalizedBases = uniqueStrings(baseDomains);
+    const managedOperationalDomains = getManagedOperationalDomainsFromBaseDomains(c, normalizedBases);
+    return uniqueStrings([
+        ...normalizedBases,
+        ...managedOperationalDomains,
+    ]);
 }
 
 export const getDefaultDomains = (c: Context<HonoCustomType>): string[] => {
-    return expandOperationalDomains(c, getConfiguredDefaultDomains(c));
+    return getExpandedDomainSetFromBaseDomains(c, getConfiguredDefaultDomains(c));
 }
 
 export const getDomains = (c: Context<HonoCustomType>): string[] => {
-    return expandOperationalDomains(c, getConfiguredDomains(c));
+    return getExpandedDomainSetFromBaseDomains(c, getConfiguredDomains(c));
 }
 
 export const getRandomSubdomainDomains = (c: Context<HonoCustomType>): string[] => {
@@ -433,6 +458,8 @@ export default {
     getStringArray,
     getDefaultDomains,
     getDomains,
+    getManagedOperationalDomainsFromBaseDomains,
+    getExpandedDomainSetFromBaseDomains,
     getRandomSubdomainDomains,
     getUserRoles,
     getAnotherWorkerList,

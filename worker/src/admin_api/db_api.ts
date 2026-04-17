@@ -36,6 +36,25 @@ CREATE INDEX IF NOT EXISTS idx_address_updated_at ON address(updated_at);
 
 CREATE INDEX IF NOT EXISTS idx_address_source_meta ON address(source_meta);
 
+CREATE TABLE IF NOT EXISTS mailbox_domain_allocation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mailbox_domain TEXT UNIQUE NOT NULL,
+    unique_label TEXT NOT NULL,
+    managed_prefix TEXT NOT NULL,
+    root_domain TEXT NOT NULL,
+    base_domain TEXT NOT NULL,
+    domain_depth_mode TEXT NOT NULL DEFAULT 'managed_v4',
+    reserved_extra_label TEXT,
+    source_meta TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mailbox_domain_allocation_base_domain ON mailbox_domain_allocation(base_domain);
+
+CREATE INDEX IF NOT EXISTS idx_mailbox_domain_allocation_root_domain ON mailbox_domain_allocation(root_domain);
+
+CREATE INDEX IF NOT EXISTS idx_mailbox_domain_allocation_managed_prefix ON mailbox_domain_allocation(managed_prefix);
+
 CREATE TABLE IF NOT EXISTS auto_reply_mails (
     id INTEGER PRIMARY KEY,
     source_prefix TEXT,
@@ -183,6 +202,25 @@ export default {
         if (version && version <= "v0.0.5") {
             // migration to v0.0.6: add message_id index on raw_mails
             await c.env.DB.exec(`CREATE INDEX IF NOT EXISTS idx_raw_mails_message_id ON raw_mails(message_id);`);
+        }
+        if (version && version <= "v0.0.6") {
+            await c.env.DB.exec(`
+                CREATE TABLE IF NOT EXISTS mailbox_domain_allocation (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mailbox_domain TEXT UNIQUE NOT NULL,
+                    unique_label TEXT NOT NULL,
+                    managed_prefix TEXT NOT NULL,
+                    root_domain TEXT NOT NULL,
+                    base_domain TEXT NOT NULL,
+                    domain_depth_mode TEXT NOT NULL DEFAULT 'managed_v4',
+                    reserved_extra_label TEXT,
+                    source_meta TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            await c.env.DB.exec(`CREATE INDEX IF NOT EXISTS idx_mailbox_domain_allocation_base_domain ON mailbox_domain_allocation(base_domain);`);
+            await c.env.DB.exec(`CREATE INDEX IF NOT EXISTS idx_mailbox_domain_allocation_root_domain ON mailbox_domain_allocation(root_domain);`);
+            await c.env.DB.exec(`CREATE INDEX IF NOT EXISTS idx_mailbox_domain_allocation_managed_prefix ON mailbox_domain_allocation(managed_prefix);`);
         }
         if (version != CONSTANTS.DB_VERSION) {
             // remove all \r and \n characters from the query string

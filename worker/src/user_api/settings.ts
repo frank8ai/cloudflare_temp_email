@@ -2,7 +2,7 @@ import { Context } from "hono";
 
 import i18n from "../i18n";
 import { UserOauth2Settings, UserSettings } from "../models";
-import { getJsonSetting, getUserRoles } from "../utils"
+import { getJsonSetting, getUserRoles, getExpandedDomainSetFromBaseDomains, getConfiguredDefaultDomains } from "../utils"
 import { CONSTANTS } from "../constants";
 import { commonGetUserRole } from "../common";
 import { Jwt } from "hono/utils/jwt";
@@ -75,12 +75,19 @@ export default {
                 console.warn("[user_api/settings] updateAddressUpdatedAt failed:", user.user_id, e);
             }
         })());
+        const userRolePayload = user_role ? {
+            ...user_role,
+            domains: getExpandedDomainSetFromBaseDomains(
+                c,
+                user_role.domains || getConfiguredDefaultDomains(c),
+            ),
+        } : null;
         return c.json({
             ...user,
             is_admin: is_admin,
             access_token: access_token,
             new_user_token: new_user_token,
-            user_role: user_role
+            user_role: userRolePayload
         });
     },
 }

@@ -2,11 +2,12 @@ import { Context } from 'hono';
 import { Jwt } from 'hono/utils/jwt'
 import { WorkerMailerOptions } from 'worker-mailer';
 
-import { getBooleanValue, getDomains, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList, hashPassword, getJsonObjectValue, getRandomSubdomainDomains } from './utils';
+import { getBooleanValue, getDomains, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList, hashPassword, getJsonObjectValue, getRandomSubdomainDomains, getManagedOperationalDomainsFromBaseDomains, getExpandedDomainSetFromBaseDomains, getConfiguredDefaultDomains } from './utils';
 import { unbindTelegramByAddress } from './telegram_api/common';
 import { CONSTANTS } from './constants';
 import { AdminWebhookSettings, WebhookMail, WebhookSettings } from './models';
 import i18n from './i18n';
+import { allocateManagedMailboxDomain, pickManagedBaseDomains, shouldAllocateManagedMailboxDomain } from './managed_mailbox_allocator.ts';
 
 const DEFAULT_NAME_REGEX = /[^a-z0-9]/g;
 const DEFAULT_RANDOM_SUBDOMAIN_LENGTH = 8;
@@ -254,7 +255,9 @@ export const newAddress = async (
         name = getStringValue(c.env.PREFIX).trim() + name;
     }
     // check domain
-    const allowDomains = checkAllowDomains ? await getAllowDomains(c) : getDomains(c);
+    const allowRootDomains = checkAllowDomains ? await getAllowRootDomains(c) : getConfiguredDefaultDomains(c);
+    const allowDomains = getExpandedDomainSetFromBaseDomains(c, allowRootDomains);
+    const managedOperationalDomains = getManagedOperationalDomainsFromBaseDomains(c, allowRootDomains);
     // if domain is not set, select domain based on environment configuration
     if (!domain && allowDomains.length > 0) {
         const createAddressDefaultDomainFirst = getBooleanValue(c.env.CREATE_ADDRESS_DEFAULT_DOMAIN_FIRST);
@@ -264,19 +267,68 @@ export const newAddress = async (
             domain = allowDomains[Math.floor(Math.random() * allowDomains.length)];
         }
     }
+    const managedBaseDomains = pickManagedBaseDomains(domain, managedOperationalDomains);
+    const normalizedDomain = (domain || '').trim().toLowerCase();
+
     // check domain is valid
-    if (!domain || !allowDomains.includes(domain)) {
+    if (!domain || (!allowDomains.includes(normalizedDomain) && managedBaseDomains.length === 0)) {
         throw new Error(msgs.InvalidDomainMsg)
     }
-    if (enableRandomSubdomain && !allowRandomSubdomainForDomain(c, domain)) {
+    if (enableRandomSubdomain && !allowRandomSubdomainForDomain(c, normalizedDomain)) {
         throw new Error(msgs.RandomSubdomainNotAllowedMsg)
+    }
+
+    if (
+        shouldAllocateManagedMailboxDomain({
+            requestedDomain: normalizedDomain,
+            managedBaseDomains,
+            enableRandomSubdomain,
+        })
+    ) {
+        const mailboxDomain = await allocateManagedMailboxDomain(c, managedBaseDomains, sourceMeta);
+        if (!mailboxDomain) {
+            throw new Error(msgs.FailedCreateAddressMsg)
+        }
+
+        const address = `${name}@${mailboxDomain}`;
+        try {
+            await insertAddressRecord(c, address, sourceMeta, msgs);
+            await updateAddressUpdatedAt(c, address);
+
+            const address_id = await c.env.DB.prepare(
+                `SELECT id FROM address where name = ?`
+            ).bind(address).first<number>("id");
+
+            if (!address_id) {
+                throw new Error(msgs.FailedCreateAddressMsg);
+            }
+
+            const generatedPassword = await generatePasswordForAddress(c, address);
+            const jwt = await Jwt.sign({
+                address: address,
+                address_id: address_id
+            }, c.env.JWT_SECRET, "HS256");
+
+            return {
+                jwt: jwt,
+                address: address,
+                password: generatedPassword,
+                address_id: address_id,
+            };
+        } catch (e) {
+            const message = (e as Error).message;
+            if (message && message.includes("UNIQUE")) {
+                throw new Error(msgs.AddressAlreadyExistsMsg);
+            }
+            throw new Error(msgs.FailedCreateAddressMsg);
+        }
     }
 
     const maxAttempts = enableRandomSubdomain ? MAX_RANDOM_SUBDOMAIN_ATTEMPTS : 1;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const addressDomain = enableRandomSubdomain
-            ? `${generateRandomSubdomain(c)}.${domain}`
-            : domain;
+            ? `${generateRandomSubdomain(c)}.${normalizedDomain}`
+            : normalizedDomain;
         const address = `${name}@${addressDomain}`;
 
         try {
@@ -599,13 +651,18 @@ export const getAddressPrefix = async (c: Context<HonoCustomType>): Promise<stri
     return getStringValue(c.env.PREFIX);
 }
 
-export const getAllowDomains = async (c: Context<HonoCustomType>): Promise<string[]> => {
+export const getAllowRootDomains = async (c: Context<HonoCustomType>): Promise<string[]> => {
     const user = c.get("userPayload");
     if (!user) {
-        return getDefaultDomains(c);
+        return getConfiguredDefaultDomains(c);
     }
     const user_role = await commonGetUserRole(c, user.user_id);
-    return user_role?.domains || getDefaultDomains(c);;
+    return user_role?.domains || getConfiguredDefaultDomains(c);
+}
+
+export const getAllowDomains = async (c: Context<HonoCustomType>): Promise<string[]> => {
+    const rootDomains = await getAllowRootDomains(c);
+    return getExpandedDomainSetFromBaseDomains(c, rootDomains);
 }
 
 export async function sendWebhook(

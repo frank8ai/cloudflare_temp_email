@@ -66,6 +66,7 @@ const getOpenSettings = async (message, notification) => {
         if (res["domains"]?.length < 1) {
             message.error("No domains found, please check your worker settings");
         }
+        const useDisplayLabels = domainLabels.length === res["domains"]?.length;
         Object.assign(openSettings.value, {
             ...res,
             title: res["title"] || "",
@@ -77,7 +78,7 @@ const getOpenSettings = async (message, notification) => {
             randomSubdomainDomains: res["randomSubdomainDomains"] || [],
             domains: res["domains"].map((domain, index) => {
                 return {
-                    label: domainLabels.length > index ? domainLabels[index] : domain,
+                    label: useDisplayLabels && domainLabels.length > index ? domainLabels[index] : domain,
                     value: domain
                 }
             }),

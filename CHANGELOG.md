@@ -10,6 +10,8 @@
 
 ### Features
 
+- feat: |Mailbox| 当配置了受管二级前缀池时，新建地址默认切换为唯一四级域名模式，地址会创建为 `name@六位串.前缀.根域`，并通过永久分配表避免历史域名复用
+- feat: |Admin| 后台配置接口新增受管前缀池统计、黑名单统计和当前可用受管运营域名数量，便于确认二级子域池是否已在 Cloudflare 侧准备完毕
 - feat: |Admin| 管理后台账号列表支持按列排序（ID、名称、创建时间、更新时间、邮件数量、发送数量），搜索时自动重置分页到第1页（#918）
 - feat: |Admin API| `/admin/new_address` 接口返回值新增 `address_id` 字段，避免创建后需再次查询地址 ID（#912）
 - feat: |自动回复| 发件人过滤支持正则表达式匹配，使用 `/pattern/` 语法（如 `/@example\.com$/`），同时保持前缀匹配的向后兼容
@@ -28,6 +30,7 @@
 
 ### Docs
 
+- docs: |Subdomain| 新增受管前缀池默认建号模式说明，明确 `DOMAIN_LABELS` 会作为二级前缀池参与默认地址生成，并说明 Cloudflare Email Routing 需先配置对应二级子域
 - docs: |API| 新增地址 JWT 与用户 JWT 的区分说明，避免混淆两种认证方式；调整文档菜单结构，将 API 接口文档归类到独立分组（#910）
 - docs: |Telegram| 新增每用户邮件推送和全局推送功能说明文档（#769）
 - docs: |Webhook| 新增 Telegram Bot、企业微信、Discord 等常用推送平台的 Webhook 模板示例

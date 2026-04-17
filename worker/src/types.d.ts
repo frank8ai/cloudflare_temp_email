@@ -33,6 +33,7 @@ type Bindings = {
     USER_DEFAULT_ROLE: string | UserRole | undefined
     USER_ROLES: string | UserRole[] | undefined
     DOMAIN_LABELS: string | string[] | undefined
+    DOMAIN_LABELS_EXTRA: string | Record<string, string[]> | undefined
     PASSWORDS: string | string[] | undefined
     ADMIN_PASSWORDS: string | string[] | undefined
     DISABLE_ADMIN_PASSWORD_CHECK: string | boolean | undefined

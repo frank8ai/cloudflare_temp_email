@@ -33,3 +33,25 @@ RANDOM_SUBDOMAIN_LENGTH = 8
 > 这个功能只是在“创建地址”时自动补一个随机二级域名。
 >
 > 它不会自动帮你创建 Cloudflare 侧的子域名收件路由或 DNS 配置，请先确保基础域名/子域名路由本身已经可用。
+
+## 默认唯一四级域名模式
+
+如果你已经提前在 Cloudflare Email Routing 里配置好一批固定的二级子域，例如：
+
+- `alpha.example.com`
+- `docs.example.com`
+- `support.example.com`
+
+那么可以把这些前缀放进 `DOMAIN_LABELS`，让系统默认创建四级域名地址：
+
+- `neo@a4k9m2.alpha.example.com`
+- `neo@m7q2x8.docs.example.com`
+
+特点：
+
+- 每个邮箱域名都会带一个 6 位字母数字串
+- 纯数字或明显重复模式不会被使用
+- 已经发过的邮箱域名会被永久记录，不会复用
+- 后续即使删除了邮箱地址，也不会再次发同一个邮箱域名
+
+这更适合“需要长期保持域名不重复”的场景。

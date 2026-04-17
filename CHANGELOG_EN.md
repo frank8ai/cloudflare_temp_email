@@ -10,6 +10,8 @@
 
 ### Features
 
+- feat: |Mailbox| When a managed second-level prefix pool is configured, new mailbox creation now defaults to a unique four-level mailbox domain format `name@<six-char>.<prefix>.<root>`, backed by a permanent allocation table to prevent historical reuse
+- feat: |Admin| Admin config output now exposes managed prefix counts, blocked-prefix counts, and active managed operational domain counts so Cloudflare-side preparation can be confirmed quickly
 - feat: |Admin| Admin account list now supports column sorting (ID, name, created at, updated at, mail count, send count), search automatically resets pagination to page 1 (#918)
 - feat: |Admin API| `/admin/new_address` endpoint now returns `address_id` field, avoiding additional query after address creation (#912)
 - feat: |Auto Reply| Add regex matching support for sender filter using `/pattern/` syntax (e.g. `/@example\.com$/`), backward compatible with prefix matching
@@ -28,6 +30,7 @@
 
 ### Docs
 
+- docs: |Subdomain| Document the managed-prefix default creation mode, clarify that `DOMAIN_LABELS` participates in default mailbox generation, and note that Cloudflare Email Routing for each managed second-level subdomain must be prepared first
 - docs: |API| Add clarification between Address JWT and User JWT to avoid confusion; reorganize documentation menu structure with dedicated API Endpoints section (#910)
 - docs: |Telegram| Add per-user mail push and global push documentation (#769)
 - docs: |Webhook| Add webhook template examples for Telegram Bot, WeChat Work, Discord and other common push platforms

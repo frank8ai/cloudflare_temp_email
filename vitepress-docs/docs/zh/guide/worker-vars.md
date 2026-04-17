@@ -34,7 +34,8 @@
 | `CREATE_ADDRESS_DEFAULT_DOMAIN_FIRST` | 文本/JSON | 创建新地址时是否优先使用默认域名，如果设置为 true，当未指定域名时将使用第一个域名, 主要用于 telegram bot 场景                     | `false`                                   |
 | `RANDOM_SUBDOMAIN_DOMAINS`            | JSON      | 允许启用随机子域名的基础域名列表，启用后可把 `name@abc.com` 创建成 `name@随机串.abc.com`                                         | `["abc.com"]`                             |
 | `RANDOM_SUBDOMAIN_LENGTH`             | 数字      | 随机子域名长度，默认 `8`，范围 `1-63`                                                                                            | `8`                                       |
-| `DOMAIN_LABELS`                       | JSON      | 对于中文域名，可以使用 DOMAIN_LABELS 显示域名的中文展示名称                                                                       | `["中文.awsl.uk", "dreamhunter2333.xyz"]` |
+| `DOMAIN_LABELS`                       | JSON      | 受管二级前缀池。配置后会把每个根域扩展成 `前缀.根域` 形式的运营域名，并作为默认唯一四级域名模式的基础池                               | `["alpha", "docs", "support"]` |
+| `DOMAIN_LABELS_EXTRA`                 | JSON      | 按根域追加的二级前缀池，只对指定根域生效                                                                                           | `{"example.com":["brand","status"]}` |
 | `ENABLE_AUTO_REPLY`                   | 文本/JSON | 允许自动回复邮件。发件人过滤（`source_prefix`）支持三种模式：留空匹配所有发件人、填写前缀进行 `startsWith` 匹配、使用 `/regex/` 语法进行正则匹配（如 `/@example\.com$/`） | `true`                                    |
 | `DEFAULT_SEND_BALANCE`                | 文本/JSON | 默认发送邮件余额，如果不设置，将为 0                                                                                              | `1`                                       |
 | `ENABLE_ADDRESS_PASSWORD`             | 文本/JSON | 启用邮箱地址密码功能，启用后创建新地址时会自动生成密码，并支持密码登录和修改                                                      | `true`                                    |
@@ -44,6 +45,14 @@
 > 侧的子域名路由。
 >
 > 子域名地址通常更适合收件；如果要发件，仍建议优先使用主域名。
+>
+> 当 `DOMAIN_LABELS` 或 `DOMAIN_LABELS_EXTRA` 提供了受管二级前缀池时，新建地址会优先走默认唯一模式：
+>
+> `name@六位串.前缀.根域`
+>
+> 例如：`neo@a4k9m2.alpha.example.com`
+>
+> 这个模式会永久记录已经发过的邮箱域名，即使地址后续被删除也不会重复发放。你仍然需要先在 Cloudflare Email Routing 侧为这些 `前缀.根域` 完成收件配置。
 
 ## 接受邮件相关变量
 

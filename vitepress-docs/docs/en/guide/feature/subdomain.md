@@ -35,3 +35,25 @@ RANDOM_SUBDOMAIN_LENGTH = 8
 >
 > It does not automatically create Cloudflare-side subdomain mail routes or DNS records for you,
 > so make sure the base-domain/subdomain routing is already available first.
+
+## Default Unique Four-level Mailbox Domains
+
+If you have already prepared fixed second-level subdomains in Cloudflare Email Routing, such as:
+
+- `alpha.example.com`
+- `docs.example.com`
+- `support.example.com`
+
+you can place those prefixes in `DOMAIN_LABELS` and let the system create four-level mailbox domains by default:
+
+- `neo@a4k9m2.alpha.example.com`
+- `neo@m7q2x8.docs.example.com`
+
+Characteristics:
+
+- every mailbox domain gets a six-character alphanumeric label
+- pure-digit and obviously repeated labels are rejected
+- every issued mailbox domain is recorded permanently and will not be reused
+- deleting the mailbox later does not make that mailbox domain available again
+
+This mode is better for long-running setups that require strict mailbox-domain uniqueness.

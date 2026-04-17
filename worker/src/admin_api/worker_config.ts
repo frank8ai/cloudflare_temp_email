@@ -3,9 +3,16 @@ import { Context } from 'hono';
 import utils from '../utils';
 import { CONSTANTS } from '../constants';
 import { isS3Enabled } from '../mails_api/s3_attachment';
+import { CURATED_MANAGED_PREFIXES, BLOCKED_MANAGED_PREFIXES } from '../mailbox_domain_policy.ts';
+import { getManagedAllocatorStats } from '../managed_mailbox_allocator.ts';
 
 export default {
     getConfig: async (c: Context<HonoCustomType>) => {
+        const managedStats = getManagedAllocatorStats(
+            utils.getConfiguredDomains(c),
+            utils.getStringArray(c.env.DOMAIN_LABELS),
+            utils.getJsonObjectValue<Record<string, string[]>>(c.env.DOMAIN_LABELS_EXTRA as any) || {},
+        );
         return c.json({
             "DEFAULT_LANG": c.env.DEFAULT_LANG,
             "TITLE": c.env.TITLE,
@@ -27,6 +34,9 @@ export default {
             "RANDOM_SUBDOMAIN_DOMAINS": utils.getRandomSubdomainDomains(c),
             "RANDOM_SUBDOMAIN_LENGTH": utils.getIntValue(c.env.RANDOM_SUBDOMAIN_LENGTH, 8),
             "DOMAIN_LABELS": utils.getStringArray(c.env.DOMAIN_LABELS),
+            "MANAGED_PREFIX_POLICY_COUNT": CURATED_MANAGED_PREFIXES.length,
+            "MANAGED_PREFIX_BLOCK_COUNT": BLOCKED_MANAGED_PREFIXES.size,
+            "MANAGED_OPERATIONAL_DOMAIN_COUNT": managedStats.operationalDomainCount,
 
             "HAS_JWT_SECRET": !!utils.getStringValue(c.env.JWT_SECRET),
 
