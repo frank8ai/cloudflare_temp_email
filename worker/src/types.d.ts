@@ -8,8 +8,8 @@ type Bindings = {
     // bindings
     DB: D1Database
     KV: KVNamespace
-    RATE_LIMITER: any
-    SEND_MAIL: any
+    RATE_LIMITER: RateLimit
+    SEND_MAIL: SendEmail
     ASSETS: Fetcher
     AI: Ai
 
@@ -25,6 +25,7 @@ type Bindings = {
     MAX_ADDRESS_LEN: string | number | undefined
     DEFAULT_DOMAINS: string | string[] | undefined
     DOMAINS: string | string[] | undefined
+    ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH: string | boolean | undefined
     RANDOM_SUBDOMAIN_DOMAINS: string | string[] | undefined
     RANDOM_SUBDOMAIN_LENGTH: string | number | undefined
     DISABLE_CUSTOM_ADDRESS_NAME: string | boolean | undefined
@@ -83,6 +84,7 @@ type Bindings = {
 
     // SMTP config
     SMTP_CONFIG: string | object | undefined
+    SEND_MAIL_DOMAINS: string | string[] | undefined
 
     // telegram config
     TELEGRAM_BOT_TOKEN: string
@@ -97,6 +99,9 @@ type Bindings = {
     // AI extraction config
     ENABLE_AI_EMAIL_EXTRACT: string | boolean | undefined
     AI_EXTRACT_MODEL: string | undefined
+
+    // gzip compression for raw_mails
+    ENABLE_MAIL_GZIP: string | boolean | undefined
 
     // E2E testing
     E2E_TEST_MODE: string | boolean | undefined

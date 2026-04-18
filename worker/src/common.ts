@@ -2,16 +2,30 @@ import { Context } from 'hono';
 import { Jwt } from 'hono/utils/jwt'
 import { WorkerMailerOptions } from 'worker-mailer';
 
-import { getBooleanValue, getDomains, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList, hashPassword, getJsonObjectValue, getRandomSubdomainDomains, getManagedOperationalDomainsFromBaseDomains, getExpandedDomainSetFromBaseDomains, getConfiguredDefaultDomains } from './utils';
+import { getBooleanValue, getDomains, getStringArray, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList, hashPassword, getJsonObjectValue, getRandomSubdomainDomains, getManagedOperationalDomainsFromBaseDomains, getExpandedDomainSetFromBaseDomains, getConfiguredDefaultDomains } from './utils';
 import { unbindTelegramByAddress } from './telegram_api/common';
 import { CONSTANTS } from './constants';
-import { AdminWebhookSettings, WebhookMail, WebhookSettings } from './models';
+import { AddressCreationSettings, AdminWebhookSettings, WebhookMail, WebhookSettings } from './models';
 import i18n from './i18n';
 import { allocateManagedMailboxDomain, pickManagedBaseDomains, shouldAllocateManagedMailboxDomain } from './managed_mailbox_allocator.ts';
 
 const DEFAULT_NAME_REGEX = /[^a-z0-9]/g;
 const DEFAULT_RANDOM_SUBDOMAIN_LENGTH = 8;
 const MAX_RANDOM_SUBDOMAIN_ATTEMPTS = 5;
+const MAX_DOMAIN_LENGTH = 253;
+const DOMAIN_LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+const normalizeDomainValue = (domain: string): string => {
+    return domain.trim().toLowerCase();
+}
+
+const isValidDomainLabel = (label: string): boolean => {
+    return DOMAIN_LABEL_RE.test(label);
+}
+
+const areValidDomainLabels = (labels: string[]): boolean => {
+    return labels.length > 0 && labels.every((label) => isValidDomainLabel(label));
+}
 
 /**
  * Check if send mail is enabled for a specific domain
@@ -31,9 +45,24 @@ export const isSendMailEnabled = (
     if (smtpConfigMap && smtpConfigMap[mailDomain]) return true;
 
     // Check SEND_MAIL binding
-    if (c.env.SEND_MAIL) return true;
+    if (isSendMailBindingEnabled(c, mailDomain)) return true;
 
     return false;
+}
+
+export const isSendMailBindingEnabled = (
+    c: Context<HonoCustomType>,
+    mailDomain: string
+): boolean => {
+    if (!c.env.SEND_MAIL) {
+        return false;
+    }
+    const sendMailDomains = getStringArray(c.env.SEND_MAIL_DOMAINS)
+        .map((domain) => normalizeDomainValue(domain));
+    if (sendMailDomains.length === 0) {
+        return true;
+    }
+    return sendMailDomains.includes(normalizeDomainValue(mailDomain));
 }
 
 /**
@@ -86,7 +115,98 @@ const allowRandomSubdomainForDomain = (
     c: Context<HonoCustomType>,
     domain: string
 ): boolean => {
-    return getRandomSubdomainDomains(c).includes(domain);
+    const normalizedDomain = normalizeDomainValue(domain);
+    return getRandomSubdomainDomains(c)
+        .map((item) => normalizeDomainValue(item))
+        .includes(normalizedDomain);
+}
+
+const isCreateAddressSubdomainMatchEnvConfigured = (c: Context<HonoCustomType>): boolean => {
+    return c.env.ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH !== undefined
+        && c.env.ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH !== null
+        && c.env.ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH !== "";
+}
+
+export const getAddressCreationSettings = async (
+    c: Context<HonoCustomType>
+): Promise<AddressCreationSettings> => {
+    const value = await getJsonSetting<AddressCreationSettings>(
+        c, CONSTANTS.ADDRESS_CREATION_SETTINGS_KEY
+    );
+    return new AddressCreationSettings(value);
+}
+
+export const getAddressCreationSubdomainMatchStatus = async (
+    c: Context<HonoCustomType>,
+    existingSettings?: AddressCreationSettings
+): Promise<{
+    envConfigured: boolean,
+    envEnabled: boolean,
+    storedEnabled: boolean | undefined,
+    effectiveEnabled: boolean,
+}> => {
+    const envConfigured = isCreateAddressSubdomainMatchEnvConfigured(c);
+    const envEnabled = getBooleanValue(c.env.ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH);
+    const addressCreationSettings = existingSettings || await getAddressCreationSettings(c);
+    const storedEnabled = addressCreationSettings.enableSubdomainMatch;
+
+    // 业务约束：env=false 作为全局 kill switch，后台开关不能强行打开。
+    const effectiveEnabled = envConfigured && !envEnabled
+        ? false
+        : typeof storedEnabled === "boolean"
+            ? storedEnabled
+            : envEnabled;
+
+    return {
+        envConfigured,
+        envEnabled,
+        storedEnabled,
+        effectiveEnabled,
+    };
+}
+
+const findMatchedAllowedDomain = (
+    domain: string,
+    allowDomains: string[],
+    enableSubdomainMatch: boolean,
+): string | null => {
+    const normalizedDomain = normalizeDomainValue(domain);
+    if (normalizedDomain.length > MAX_DOMAIN_LENGTH) {
+        return null;
+    }
+    const domainLabels = normalizedDomain.split('.');
+    if (!areValidDomainLabels(domainLabels)) {
+        return null;
+    }
+    const normalizedAllowDomains = allowDomains.map((allowDomain) => normalizeDomainValue(allowDomain));
+    if (normalizedAllowDomains.includes(normalizedDomain)) {
+        return normalizedDomain;
+    }
+    if (!enableSubdomainMatch) {
+        return null;
+    }
+    const matchedDomain = [...normalizedAllowDomains]
+        .sort((a, b) => b.length - a.length)
+        .find((allowDomain) => {
+            if (allowDomain.length > MAX_DOMAIN_LENGTH) {
+                return false;
+            }
+            const allowDomainLabels = allowDomain.split('.');
+            if (!areValidDomainLabels(allowDomainLabels)) {
+                return false;
+            }
+            if (domainLabels.length <= allowDomainLabels.length) {
+                return false;
+            }
+            const prefixLabels = domainLabels.slice(0, domainLabels.length - allowDomainLabels.length);
+            if (!areValidDomainLabels(prefixLabels)) {
+                return false;
+            }
+            return allowDomainLabels.every((label, index) => {
+                return domainLabels[domainLabels.length - allowDomainLabels.length + index] === label;
+            });
+        });
+    return matchedDomain || null;
 }
 
 const checkNameRegex = (c: Context<HonoCustomType>, name: string) => {
@@ -262,16 +382,21 @@ export const newAddress = async (
     if (!domain && allowDomains.length > 0) {
         const createAddressDefaultDomainFirst = getBooleanValue(c.env.CREATE_ADDRESS_DEFAULT_DOMAIN_FIRST);
         if (createAddressDefaultDomainFirst) {
-            domain = allowDomains[0];
+            domain = normalizeDomainValue(allowDomains[0]);
         } else {
-            domain = allowDomains[Math.floor(Math.random() * allowDomains.length)];
+            domain = normalizeDomainValue(allowDomains[Math.floor(Math.random() * allowDomains.length)]);
         }
+    } else if (typeof domain === "string") {
+        domain = normalizeDomainValue(domain);
     }
     const managedBaseDomains = pickManagedBaseDomains(domain, managedOperationalDomains);
     const normalizedDomain = (domain || '').trim().toLowerCase();
-
+    const { effectiveEnabled: enableSubdomainMatch } = await getAddressCreationSubdomainMatchStatus(c);
+    const matchedAllowDomain = normalizedDomain
+        ? findMatchedAllowedDomain(normalizedDomain, allowDomains, enableSubdomainMatch)
+        : null;
     // check domain is valid
-    if (!domain || (!allowDomains.includes(normalizedDomain) && managedBaseDomains.length === 0)) {
+    if (!normalizedDomain || (!matchedAllowDomain && managedBaseDomains.length === 0)) {
         throw new Error(msgs.InvalidDomainMsg)
     }
     if (enableRandomSubdomain && !allowRandomSubdomainForDomain(c, normalizedDomain)) {
@@ -563,6 +688,33 @@ export const handleListQuery = async (
     return c.json({ results, count });
 }
 
+/**
+ * handleListQuery variant for raw_mails: resolves raw_blob → raw after query.
+ */
+export const handleMailListQuery = async (
+    c: Context<HonoCustomType>,
+    query: string, countQuery: string, params: string[],
+    limit: string | number | undefined | null,
+    offset: string | number | undefined | null,
+    orderBy?: string
+): Promise<Response> => {
+    const { resolveRawEmailList } = await import('./gzip');
+    const msgs = i18n.getMessagesbyContext(c);
+    if (typeof limit === "string") limit = parseInt(limit);
+    if (typeof offset === "string") offset = parseInt(offset);
+    if (!limit || limit < 0 || limit > 100) return c.text(msgs.InvalidLimitMsg, 400);
+    if (offset == null || offset == undefined || offset < 0) return c.text(msgs.InvalidOffsetMsg, 400);
+    const orderClause = orderBy || 'id desc';
+    const resultsQuery = `${query} order by ${orderClause} limit ? offset ?`;
+    const { results } = await c.env.DB.prepare(resultsQuery).bind(
+        ...params, limit, offset
+    ).all();
+    const resolvedResults = await resolveRawEmailList(results);
+    const count = offset == 0 ? await c.env.DB.prepare(
+        countQuery
+    ).bind(...params).first("count") : 0;
+    return c.json({ results: resolvedResults, count });
+}
 
 export const commonParseMail = async (parsedEmailContext: ParsedEmailContext): Promise<{
     sender: string,
@@ -642,13 +794,13 @@ export const commonGetUserRole = async (
 export const getAddressPrefix = async (c: Context<HonoCustomType>): Promise<string | undefined> => {
     const user = c.get("userPayload");
     if (!user) {
-        return getStringValue(c.env.PREFIX);
+        return getStringValue(c.env.PREFIX).trim().toLowerCase();
     }
     const user_role = await commonGetUserRole(c, user.user_id);
     if (typeof user_role?.prefix === "string") {
-        return user_role.prefix;
+        return user_role.prefix.trim().toLowerCase();
     }
-    return getStringValue(c.env.PREFIX);
+    return getStringValue(c.env.PREFIX).trim().toLowerCase();
 }
 
 export const getAllowRootDomains = async (c: Context<HonoCustomType>): Promise<string[]> => {

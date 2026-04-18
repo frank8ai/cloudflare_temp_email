@@ -2,9 +2,50 @@
 # CHANGE LOG
 
 <p align="center">
-  <a href="CHANGELOG.md">🇨🇳 中文</a> |
-  <a href="CHANGELOG_EN.md">🇺🇸 English</a>
+  <a href="CHANGELOG.md">中文</a> |
+  <a href="CHANGELOG_EN.md">English</a>
 </p>
+
+## v1.7.0(main)
+
+### Breaking Changes
+
+- breaking: |send mail| `SEND_MAIL` semantics changed from a verified-address-only compatibility path to a normal fallback send channel. If an instance already binds `SEND_MAIL` and does not configure Resend/SMTP, recipients outside `verifiedAddressList` will now also be sent through the Cloudflare binding after upgrade, changing runtime behavior and cost routing
+
+### Features
+
+- feat: |send mail| Recommend Cloudflare `send_email` binding as the default send channel. Domains onboarded to Email Routing without Resend/SMTP now automatically use the binding to send to arbitrary addresses (Workers Paid includes 3,000 msgs/month, $0.35/1000 beyond); existing `verifiedAddressList` / Resend / SMTP configurations remain fully compatible (#964)
+
+### Bug Fixes
+
+- fix: |User Mailbox| Fix an issue where the user center still showed delete actions and could still delete mail via `/user_api/mails/:id` when `ENABLE_USER_DELETE_EMAIL` was disabled (#978)
+- fix: |Address| Lowercase configured prefixes when creating addresses to avoid generating mixed-case mailbox names; existing data must be migrated to lowercase manually by the user (#930)
+
+### Improvements
+
+## v1.6.0(main)
+
+### Features
+
+- feat: |Admin| Add **IP Whitelist (strict mode)** to IP blacklist settings: when enabled, ONLY whitelisted IPs can access rate-limited APIs (create address, send mail, external send mail, user register, verify code); all other IPs are denied (#920)
+- feat: |Address| Support setting max address count to `0` for unlimited (#968)
+
+### Bug Fixes
+
+- fix: |Admin| Fix `D1_ERROR: LIKE or GLOB pattern too complex` on `/admin/address` and `/admin/users` when searching by full email address (query length pushes the LIKE pattern over D1's 50-byte limit). Long queries now fall back to `instr()` to bypass the LIKE pattern length cap (#956)
+
+### Improvements
+
+- docs: |Send Mail API| Clarify authentication differences between `/api/send_mail` and `/external/api/send_mail`, add "Address JWT" concept explanation (#922)
+- docs: |Worker Variables| Add generation instructions for `JWT_SECRET` (`openssl rand -hex 32`) (#932)
+- docs: |CLI Deployment| Add usage explanation for `routes` custom domain configuration (#932)
+- docs: |Admin API| Add `address_id` field to `/admin/new_address` response documentation (#912)
+- docs: |Admin| Add account list sorting feature documentation (#918)
+- docs: |Pages Deployment| Add SPA mode instructions to avoid 404 when refreshing or accessing sub-paths directly (#813)
+- docs: |Sidebar| Restructure documentation sidebar into "Core Configuration", "Notifications & Integrations", "Advanced Features", "Admin Console" groups
+- docs: |FAQ| Significantly expand FAQ with SPA 404, send balance, SMTP_CONFIG, mail client login and more (#919, #925, #839, #715, #921, #609)
+- docs: |Email Sending| Enhance SMTP_CONFIG field reference and multi-domain examples, add send balance mechanism documentation
+- docs: |Email Routing| Note that subdomains require Email Routing to be enabled separately; enabling it only on the apex domain does not cover subdomains (#969)
 
 ## v1.5.0(main)
 
@@ -14,9 +55,13 @@
 - feat: |Admin| Admin config output now exposes managed prefix counts, blocked-prefix counts, and active managed operational domain counts so Cloudflare-side preparation can be confirmed quickly
 - feat: |Admin| Admin account list now supports column sorting (ID, name, created at, updated at, mail count, send count), search automatically resets pagination to page 1 (#918)
 - feat: |Admin API| `/admin/new_address` endpoint now returns `address_id` field, avoiding additional query after address creation (#912)
+- feat: |Create Address| Add `ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH` switch and an admin-panel toggle for suffix-based subdomain matching in create-address APIs; when enabled, `foo.example.com` can match base domain `example.com`
 - feat: |Auto Reply| Add regex matching support for sender filter using `/pattern/` syntax (e.g. `/@example\.com$/`), backward compatible with prefix matching
 - feat: |Turnstile| Add global Turnstile CAPTCHA for all login forms via `ENABLE_GLOBAL_TURNSTILE_CHECK` env var (#767)
 - feat: |Telegram| Support sending email attachments in Telegram push (50MB per file limit), multiple attachments sent via `sendMediaGroup`, controlled by `ENABLE_TG_PUSH_ATTACHMENT` env var (#894)
+- feat: |Mail Storage| Support enabling gzip-compressed email storage via `ENABLE_MAIL_GZIP` variable (#823)
+  - Run database migration before enabling it: `Admin -> Quick Setup -> Database -> Migrate Database`, or call `POST /admin/db_migration`
+  - New emails are stored in `raw_blob` and reads stay compatible with `raw` / `raw_blob`; compression and decompression add CPU overhead, so a paid Worker plan is recommended
 
 ### Bug Fixes
 
@@ -26,11 +71,13 @@
 
 ### Testing
 
+- test: |E2E| Add create-address subdomain matching tests covering default exact-match behavior, admin-enabled matching, and env=false hard-disable precedence
 - test: |E2E| Add auto-reply trigger E2E tests covering empty prefix, prefix matching, regex matching, and disabled state
 
 ### Docs
 
 - docs: |Subdomain| Document the managed-prefix default creation mode, clarify that `DOMAIN_LABELS` participates in default mailbox generation, and note that Cloudflare Email Routing for each managed second-level subdomain must be prepared first
+- docs: |Create Address| Update create-address API, worker variables, and subdomain docs to clarify the difference between explicitly specified subdomains and random subdomains
 - docs: |API| Add clarification between Address JWT and User JWT to avoid confusion; reorganize documentation menu structure with dedicated API Endpoints section (#910)
 - docs: |Telegram| Add per-user mail push and global push documentation (#769)
 - docs: |Webhook| Add webhook template examples for Telegram Bot, WeChat Work, Discord and other common push platforms

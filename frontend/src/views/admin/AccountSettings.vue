@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, h } from 'vue';
+import { computed, onMounted, ref, h } from 'vue';
 import { useI18n } from 'vue-i18n'
 import { NButton, NPopconfirm, NInput, NSelect, NRadioGroup, NRadio } from 'naive-ui'
 
@@ -21,6 +21,12 @@ const { t } = useI18n({
             send_address_block_list: 'Address Block Keywords for send email',
             noLimitSendAddressList: 'No Balance Limit Send Address List',
             verified_address_list: 'Verified Address List(Can send email by cf internal api)',
+            send_mail_limit: 'Send Mail Limit',
+            send_mail_limit_tip: 'This applies to all send channels. Use -1 for unlimited and 0 to block sending.',
+            send_mail_daily_limit: 'Daily Limit',
+            send_mail_monthly_limit: 'Monthly Limit',
+            send_mail_daily_limit_invalid: 'Daily limit must be an integer greater than or equal to -1',
+            send_mail_monthly_limit_invalid: 'Monthly limit must be an integer greater than or equal to -1',
             fromBlockList: 'Block Keywords for receive email',
             block_receive_unknow_address_email: 'Block receive unknow address email',
             email_forwarding_config: 'Email Forwarding Configuration',
@@ -46,6 +52,14 @@ const { t } = useI18n({
             regex_invalid: 'Invalid regex pattern',
             forward_address_required: 'Forward address is required',
             rule_index: 'Rule',
+            create_address_subdomain_match: 'Allow Subdomain Suffix Match When Creating Address',
+            create_address_subdomain_match_tip: 'Only affects /api/new_address and /admin/new_address domain validation. Example: when enabled, foo.example.com can match configured base domain example.com.',
+            create_address_subdomain_match_note: 'This is different from RANDOM_SUBDOMAIN_DOMAINS: this switch allows API callers to specify custom subdomains directly, while random subdomain only auto-generates one during creation.',
+            create_address_subdomain_match_follow_env: 'Follow Environment Variable',
+            create_address_subdomain_match_force_enable: 'Force Enable',
+            create_address_subdomain_match_force_disable: 'Force Disable',
+            create_address_subdomain_match_follow_env_note: 'Choosing "Follow Environment Variable" clears the admin override and returns to the unset state. The effective result is still controlled by the Worker env and the precedence rules.',
+            create_address_subdomain_match_env_locked: 'Worker env ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH is currently false. The saved admin switch can be modified, but it will not take effect until env is enabled or removed.',
         },
         zh: {
             tip: '您可以手动输入以下多选输入框, 回车增加',
@@ -57,6 +71,12 @@ const { t } = useI18n({
             send_address_block_list: '发送邮件地址屏蔽关键词',
             noLimitSendAddressList: '无余额限制发送地址列表',
             verified_address_list: '已验证地址列表(可通过 cf 内部 api 发送邮件)',
+            send_mail_limit: '发信额度',
+            send_mail_limit_tip: '对全部发信渠道生效。-1 表示无限，0 表示禁止发送。',
+            send_mail_daily_limit: '每日额度',
+            send_mail_monthly_limit: '每月额度',
+            send_mail_daily_limit_invalid: '每日额度必须是大于等于 -1 的整数',
+            send_mail_monthly_limit_invalid: '每月额度必须是大于等于 -1 的整数',
             fromBlockList: '接收邮件地址屏蔽关键词',
             block_receive_unknow_address_email: '禁止接收未知地址邮件',
             email_forwarding_config: '邮件转发配置',
@@ -82,6 +102,14 @@ const { t } = useI18n({
             regex_invalid: '无效的正则表达式',
             forward_address_required: '转发地址不能为空',
             rule_index: '规则',
+            create_address_subdomain_match: '创建邮箱时允许子域名后缀匹配',
+            create_address_subdomain_match_tip: '仅影响 /api/new_address 和 /admin/new_address 的域名校验。例如开启后，foo.example.com 可以匹配已配置的基础域名 example.com。',
+            create_address_subdomain_match_note: '这与 RANDOM_SUBDOMAIN_DOMAINS 不同：这里允许 API 调用方直接指定自定义子域名；随机子域名功能只是在创建时自动补一个随机子域名。',
+            create_address_subdomain_match_follow_env: '跟随环境变量',
+            create_address_subdomain_match_force_enable: '强制开启',
+            create_address_subdomain_match_force_disable: '强制关闭',
+            create_address_subdomain_match_follow_env_note: '选择“跟随环境变量”会清空后台覆盖，恢复为未设置状态；最终是否开启仍由 Worker env 和优先级规则决定。',
+            create_address_subdomain_match_env_locked: '当前 Worker 环境变量 ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH 为 false。后台开关仍可保存，但在 env 打开或移除前不会生效。',
         }
     }
 });
@@ -94,6 +122,44 @@ const fromBlockList = ref([])
 const emailRuleSettings = ref({
     blockReceiveUnknowAddressEmail: false,
     emailForwardingList: []
+})
+const ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE = {
+    FOLLOW_ENV: 'follow_env',
+    FORCE_ENABLE: 'force_enable',
+    FORCE_DISABLE: 'force_disable'
+}
+const DEFAULT_SEND_MAIL_DAILY_LIMIT = 100
+const DEFAULT_SEND_MAIL_MONTHLY_LIMIT = 3000
+const addressCreationSubdomainMatchMode = ref(ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FOLLOW_ENV)
+const sendMailDailyLimitEnabled = ref(false)
+const sendMailMonthlyLimitEnabled = ref(false)
+const sendMailDailyLimit = ref(DEFAULT_SEND_MAIL_DAILY_LIMIT)
+const sendMailMonthlyLimit = ref(DEFAULT_SEND_MAIL_MONTHLY_LIMIT)
+const addressCreationSubdomainMatchStatus = ref({
+    envConfigured: false,
+    envEnabled: false,
+    storedEnabled: undefined,
+    effectiveEnabled: false
+})
+const subdomainMatchEnvLocked = computed(() => {
+    return addressCreationSubdomainMatchStatus.value.envConfigured
+        && !addressCreationSubdomainMatchStatus.value.envEnabled
+})
+const subdomainMatchModeOptions = computed(() => {
+    return [
+        {
+            value: ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FOLLOW_ENV,
+            label: t('create_address_subdomain_match_follow_env')
+        },
+        {
+            value: ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FORCE_ENABLE,
+            label: t('create_address_subdomain_match_force_enable')
+        },
+        {
+            value: ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FORCE_DISABLE,
+            label: t('create_address_subdomain_match_force_disable')
+        }
+    ]
 })
 
 const showEmailForwardingModal = ref(false)
@@ -246,8 +312,52 @@ const saveEmailForwardingConfig = () => {
     showEmailForwardingModal.value = false
 }
 
+const getSubdomainMatchModeByStoredValue = (storedEnabled) => {
+    if (storedEnabled === true) {
+        return ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FORCE_ENABLE
+    }
+    if (storedEnabled === false) {
+        return ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FORCE_DISABLE
+    }
+    return ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FOLLOW_ENV
+}
 
-const fetchData = async () => {
+const getSubdomainMatchPayloadValue = (mode) => {
+    if (mode === ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FORCE_ENABLE) {
+        return true
+    }
+    if (mode === ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FORCE_DISABLE) {
+        return false
+    }
+    return null
+}
+
+const getSendMailLimitPayload = () => {
+    return {
+        dailyEnabled: sendMailDailyLimitEnabled.value,
+        monthlyEnabled: sendMailMonthlyLimitEnabled.value,
+        dailyLimit: sendMailDailyLimitEnabled.value ? sendMailDailyLimit.value : null,
+        monthlyLimit: sendMailMonthlyLimitEnabled.value ? sendMailMonthlyLimit.value : null
+    }
+}
+
+const isValidSendMailLimit = (value) => {
+    return Number.isInteger(value) && value >= -1
+}
+
+const validateSendMailLimit = () => {
+    if (sendMailDailyLimitEnabled.value && !isValidSendMailLimit(sendMailDailyLimit.value)) {
+        message.error(t('send_mail_daily_limit_invalid'))
+        return false
+    }
+    if (sendMailMonthlyLimitEnabled.value && !isValidSendMailLimit(sendMailMonthlyLimit.value)) {
+        message.error(t('send_mail_monthly_limit_invalid'))
+        return false
+    }
+    return true
+}
+
+const fetchData = async ({ suppressErrorMessage = false } = {}) => {
     try {
         const res = await api.fetch(`/admin/account_settings`)
         addressBlockList.value = res.blockList || []
@@ -259,33 +369,76 @@ const fetchData = async () => {
             blockReceiveUnknowAddressEmail: res.emailRuleSettings?.blockReceiveUnknowAddressEmail || false,
             emailForwardingList: res.emailRuleSettings?.emailForwardingList || []
         }
+        addressCreationSubdomainMatchStatus.value = {
+            envConfigured: !!res.addressCreationSubdomainMatchStatus?.envConfigured,
+            envEnabled: !!res.addressCreationSubdomainMatchStatus?.envEnabled,
+            storedEnabled: typeof res.addressCreationSubdomainMatchStatus?.storedEnabled === 'boolean'
+                ? res.addressCreationSubdomainMatchStatus.storedEnabled
+                : undefined,
+            effectiveEnabled: !!res.addressCreationSubdomainMatchStatus?.effectiveEnabled
+        }
+        addressCreationSubdomainMatchMode.value = getSubdomainMatchModeByStoredValue(
+            addressCreationSubdomainMatchStatus.value.storedEnabled
+        )
+        const sendMailLimitConfig = res.sendMailLimitConfig
+        sendMailDailyLimitEnabled.value = !!sendMailLimitConfig?.dailyEnabled
+        sendMailMonthlyLimitEnabled.value = !!sendMailLimitConfig?.monthlyEnabled
+        sendMailDailyLimit.value = sendMailDailyLimitEnabled.value
+            ? sendMailLimitConfig.dailyLimit
+            : DEFAULT_SEND_MAIL_DAILY_LIMIT
+        sendMailMonthlyLimit.value = sendMailMonthlyLimitEnabled.value
+            ? sendMailLimitConfig.monthlyLimit
+            : DEFAULT_SEND_MAIL_MONTHLY_LIMIT
     } catch (error) {
-        message.error(error.message || "error");
+        if (!suppressErrorMessage) {
+            message.error(error.message || "error");
+        }
+        throw error
     }
 }
 
 const save = async () => {
+    if (!validateSendMailLimit()) {
+        return
+    }
     try {
+        const payload = {
+            blockList: addressBlockList.value || [],
+            sendBlockList: sendAddressBlockList.value || [],
+            verifiedAddressList: verifiedAddressList.value || [],
+            fromBlockList: fromBlockList.value || [],
+            noLimitSendAddressList: noLimitSendAddressList.value || [],
+            emailRuleSettings: emailRuleSettings.value,
+            addressCreationSettings: {
+                enableSubdomainMatch: getSubdomainMatchPayloadValue(addressCreationSubdomainMatchMode.value)
+            },
+            sendMailLimitConfig: getSendMailLimitPayload()
+        }
         await api.fetch(`/admin/account_settings`, {
             method: 'POST',
-            body: JSON.stringify({
-                blockList: addressBlockList.value || [],
-                sendBlockList: sendAddressBlockList.value || [],
-                verifiedAddressList: verifiedAddressList.value || [],
-                fromBlockList: fromBlockList.value || [],
-                noLimitSendAddressList: noLimitSendAddressList.value || [],
-                emailRuleSettings: emailRuleSettings.value,
-            })
+            body: JSON.stringify(payload)
         })
         message.success(t('successTip'))
     } catch (error) {
         message.error(error.message || "error");
+        return
+    }
+
+    try {
+        await fetchData({ suppressErrorMessage: true })
+    } catch (error) {
+        console.warn('Failed to refresh account settings after save', error)
+        message.warning(error.message || "error");
     }
 }
 
 
 onMounted(async () => {
-    await fetchData();
+    try {
+        await fetchData();
+    } catch {
+        // 首次加载失败时，错误提示已经在 fetchData 内部统一处理，这里无需重复提示。
+    }
 })
 </script>
 
@@ -340,6 +493,35 @@ onMounted(async () => {
                     </template>
                 </n-select>
             </n-form-item-row>
+            <n-form-item-row :label="t('send_mail_limit')">
+                <n-flex vertical style="width: 100%;">
+                    <n-flex justify="space-between" align="center">
+                        <n-text>{{ t('send_mail_daily_limit') }}</n-text>
+                        <n-flex align="center">
+                            <n-switch v-model:value="sendMailDailyLimitEnabled" :round="false" />
+                            <n-input-number
+                                v-model:value="sendMailDailyLimit"
+                                :disabled="!sendMailDailyLimitEnabled"
+                                :min="-1"
+                            />
+                        </n-flex>
+                    </n-flex>
+                    <n-flex justify="space-between" align="center">
+                        <n-text>{{ t('send_mail_monthly_limit') }}</n-text>
+                        <n-flex align="center">
+                            <n-switch v-model:value="sendMailMonthlyLimitEnabled" :round="false" />
+                            <n-input-number
+                                v-model:value="sendMailMonthlyLimit"
+                                :disabled="!sendMailMonthlyLimitEnabled"
+                                :min="-1"
+                            />
+                        </n-flex>
+                    </n-flex>
+                    <n-text depth="3">
+                        {{ t('send_mail_limit_tip') }}
+                    </n-text>
+                </n-flex>
+            </n-form-item-row>
             <n-form-item-row :label="t('fromBlockList')">
                 <n-select v-model:value="fromBlockList" filterable multiple tag :placeholder="t('fromBlockList')">
                     <template #empty>
@@ -351,6 +533,29 @@ onMounted(async () => {
             </n-form-item-row>
             <n-form-item-row :label="t('block_receive_unknow_address_email')">
                 <n-switch v-model:value="emailRuleSettings.blockReceiveUnknowAddressEmail" :round="false" />
+            </n-form-item-row>
+            <n-form-item-row :label="t('create_address_subdomain_match')">
+                <n-flex vertical style="width: 100%;">
+                    <n-radio-group v-model:value="addressCreationSubdomainMatchMode">
+                        <n-space vertical size="small">
+                            <n-radio v-for="item in subdomainMatchModeOptions" :key="item.value" :value="item.value">
+                                {{ item.label }}
+                            </n-radio>
+                        </n-space>
+                    </n-radio-group>
+                    <n-text depth="3">
+                        {{ t('create_address_subdomain_match_tip') }}
+                    </n-text>
+                    <n-text depth="3">
+                        {{ t('create_address_subdomain_match_note') }}
+                    </n-text>
+                    <n-text depth="3">
+                        {{ t('create_address_subdomain_match_follow_env_note') }}
+                    </n-text>
+                    <n-alert v-if="subdomainMatchEnvLocked" type="warning" :show-icon="false" :bordered="false">
+                        {{ t('create_address_subdomain_match_env_locked') }}
+                    </n-alert>
+                </n-flex>
             </n-form-item-row>
             <n-form-item-row :label="t('email_forwarding_config')">
                 <n-button @click="openEmailForwardingModal">{{ t('config') }}</n-button>

@@ -55,3 +55,25 @@ RANDOM_SUBDOMAIN_LENGTH = 8
 - 后续即使删除了邮箱地址，也不会再次发同一个邮箱域名
 
 这更适合“需要长期保持域名不重复”的场景。
+
+## 允许 API 直接指定子域名
+
+如果你不想让系统随机生成子域名，而是希望调用方在创建地址时直接指定 `team.abc.com` 这种子域名，
+可以开启：
+
+```toml
+ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH = true
+```
+
+开启后，只要允许域名里包含基础域名 `abc.com`，那么：
+
+- `name@team.abc.com`
+- `name@dev.team.abc.com`
+
+都可以通过 `/api/new_address` 或 `/admin/new_address` 创建。
+
+> [!NOTE]
+> 这个能力只放宽“创建地址 API 的域名校验”，不会改动默认域名下拉，也不会自动创建 Cloudflare 侧的
+> 子域名邮箱路由。
+>
+> 如果你在管理后台里保存过这个开关，后续也可以通过“跟随环境变量”把它恢复到未设置状态，再重新回退到 env 默认值。

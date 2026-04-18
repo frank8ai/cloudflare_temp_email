@@ -8,7 +8,7 @@
 | Variable Name              | Type        | Description                                                            | Example                              |
 | -------------------------- | ----------- | ---------------------------------------------------------------------- | ------------------------------------ |
 | `DOMAINS`                  | JSON        | All domains for temporary email, supports multiple domains             | `["awsl.uk", "dreamhunter2333.xyz"]` |
-| `JWT_SECRET`               | Text/Secret | Secret key for generating JWT, used for login and authentication       | `xxx`                                |
+| `JWT_SECRET`               | Text/Secret | Secret key for signing JWTs used in login and authentication. Use a random string, e.g. generated via `openssl rand -hex 32` | `a1b2c3d4...`                        |
 | `ADMIN_PASSWORDS`          | JSON        | Admin console passwords, console access disabled if not configured     | `["123", "456"]`                     |
 | `ENABLE_USER_CREATE_EMAIL` | Text/JSON   | Whether to allow users to create mailboxes, disabled if not configured | `true`                               |
 | `ENABLE_USER_DELETE_EMAIL` | Text/JSON   | Whether to allow users to delete emails, disabled if not configured    | `true`                               |
@@ -32,6 +32,7 @@
 | `ADDRESS_REGEX`                       | Text      | Regular expression to replace illegal symbols in `email address` name, symbols not in the regex will be replaced. Default is `[^a-z0-9]` if not set. Use with caution as some symbols may prevent email reception | `[^a-z0-9]`                               |
 | `DEFAULT_DOMAINS`                     | JSON      | Default domains available to users (not logged in or users without assigned roles)                                                                                                                                | `["awsl.uk", "dreamhunter2333.xyz"]`      |
 | `CREATE_ADDRESS_DEFAULT_DOMAIN_FIRST` | Text/JSON | Whether to prioritize default domain when creating new addresses, if set to true, will use the first domain when no domain is specified, mainly for telegram bot scenarios                                        | `false`                                   |
+| `ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH` | Text/JSON | Whether to allow create-address APIs to use base-domain suffix matching. When enabled, if `example.com` is allowed, `/api/new_address` and `/admin/new_address` can also accept `foo.example.com` or `a.b.example.com` | `true` |
 | `RANDOM_SUBDOMAIN_DOMAINS`            | JSON      | Base domains that allow optional random subdomain creation, so `name@abc.com` can become `name@<random>.abc.com`                                                                                                   | `["abc.com"]`                             |
 | `RANDOM_SUBDOMAIN_LENGTH`             | Number    | Random subdomain length, default `8`, valid range `1-63`                                                                                                                                                           | `8`                                       |
 | `DOMAIN_LABELS`                       | JSON      | Managed second-level prefix pool. Each root domain will expand into operational base domains like `prefix.root`, which are then used by the default unique mailbox-domain mode                                       | `["alpha", "docs", "support"]` |
@@ -39,6 +40,7 @@
 | `ENABLE_AUTO_REPLY`                   | Text/JSON | Allow automatic email replies. Sender filter (`source_prefix`) supports three modes: empty to match all senders, prefix for `startsWith` matching, or `/regex/` syntax for regex matching (e.g. `/@example\.com$/`) | `true`                                    |
 | `DEFAULT_SEND_BALANCE`                | Text/JSON | Default email sending balance, will be 0 if not set                                                                                                                                                               | `1`                                       |
 | `ENABLE_ADDRESS_PASSWORD`             | Text/JSON | Enable address password feature, when enabled, passwords will be auto-generated for new addresses, supports password login and modification                                                                       | `true`                                    |
+| `SEND_MAIL_DOMAINS`                   | JSON      | Restrict which sender domains can use the `SEND_MAIL` binding; when unset or empty, all domains are allowed                                                                                                     | `["example.com", "mail.example.com"]`     |
 
 > [!NOTE]
 > `RANDOM_SUBDOMAIN_DOMAINS` only controls automatic random subdomain generation during mailbox
@@ -54,6 +56,21 @@
 > Example: `neo@a4k9m2.alpha.example.com`
 >
 > This mode permanently records every issued mailbox domain and will not reuse it later, even if the mailbox is deleted. Cloudflare Email Routing for each managed `prefix.root` base domain still has to be prepared first.
+>
+> `ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH` is different from random subdomain generation: it lets
+> API callers **directly specify** a subdomain such as `foo.example.com`, while random subdomain
+> generation appends one automatically during creation.
+>
+> `ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH` precedence: if the env is explicitly set to `false`, the
+> feature is globally forced off; otherwise the persisted admin setting takes precedence, and the env
+> value is only used as a fallback when no admin setting has been saved.
+>
+> The admin panel exposes three explicit states: **Follow Environment Variable**, **Force Enable**,
+> and **Force Disable**. Saving **Follow Environment Variable** clears the admin override and returns
+> the feature to the "unset" fallback behavior.
+>
+> `SEND_MAIL_DOMAINS` only affects the `SEND_MAIL` binding fallback path and
+> `/admin/send_mail_by_binding`. It does not affect Resend, SMTP, or `verifiedAddressList`.
 
 ## Email Reception Related Variables
 
@@ -66,8 +83,11 @@
 | `FORWARD_ADDRESS_LIST`          | JSON      | Global forward address list, disabled if not configured, all emails will be forwarded to listed addresses when enabled | `["xxx@xxx.com"]`          |
 | `REMOVE_EXCEED_SIZE_ATTACHMENT` | Text/JSON | If attachment exceeds 2MB, remove it, email may lose some information due to parsing                                   | `true`                     |
 | `REMOVE_ALL_ATTACHMENT`         | Text/JSON | Remove all attachments, email may lose some information due to parsing                                                 | `true`                     |
+| `ENABLE_MAIL_GZIP`             | Text/JSON | When enabled, new emails are gzip-compressed and stored in `raw_blob` column to save D1 database space. Existing plaintext `raw` data is automatically compatible for reading. **Run database migration first (`Admin -> Quick Setup -> Database -> Migrate Database` or `POST /admin/db_migration`) to ensure the `raw_blob` column exists before enabling. This feature adds compression/decompression CPU overhead, so enabling it on a paid Cloudflare Worker plan is recommended.** | `true`                     |
 
 > [!NOTE]
+> `ENABLE_MAIL_GZIP` adds CPU cost for gzip compression on write and decompression on read. Free-tier Workers are more likely to hit CPU limits, so a paid plan is recommended before enabling it
+>
 > `Junk mail checking` and `attachment removal` require email parsing, free tier CPU is limited, may cause large email parsing timeout
 >
 > If you want stronger email parsing capabilities
