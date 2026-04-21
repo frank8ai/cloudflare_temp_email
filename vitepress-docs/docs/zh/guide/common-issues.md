@@ -10,6 +10,7 @@
 | 使用 Cloudflare Workers 给已认证的转发邮箱发送邮件 | 使用 cf 的 API 进行发送，只支持绑定到 CF 上的收件地址，即 CF EMAIL 转发目的地址 |
 | 绑定多个域名                                       | 每个域名都需要设置 email 转发到 worker                                          |
 | 子域名收不到邮件                                   | 子域名需要在 CF 上**单独启用** Email Routing 并配置 DNS 与 Catch-all 规则，仅在一级域开启不会自动覆盖子域，详见 [Email Routing](/zh/guide/email-routing) |
+| Cloudflare 活动日志显示“已接收”，但后台地址 `Mail Count = 0` | 说明邮件被 Cloudflare 收到后没有投递到本项目 Worker。若活动日志结果是“已删除”，通常是该域名/子域名的 Email Routing 规则仍在 Cloudflare 侧直接删除了邮件，而不是转发到 Worker |
 
 ## Worker 相关
 

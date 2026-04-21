@@ -24,6 +24,8 @@
 
 ### Improvements
 
+- docs: |Subdomain| Clarify that successful mailbox creation does not guarantee mail delivery, and document that Cloudflare Activity showing "received/deleted" together with `Mail Count = 0` means Email Routing rules are dropping the message before it reaches the Worker
+
 ## v1.6.0(main)
 
 ### Features

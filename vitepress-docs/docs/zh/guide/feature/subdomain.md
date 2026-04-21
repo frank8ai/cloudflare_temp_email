@@ -36,6 +36,11 @@ RANDOM_SUBDOMAIN_LENGTH = 8
 >
 > 如果你已经部署了管理后台，也可以直接在后台的“随机子域名允许域名”里覆盖这份列表。
 > 后台未保存时会回退到 `RANDOM_SUBDOMAIN_DOMAINS`；选择“跟随环境变量”并保存可以清空后台覆盖。
+>
+> 这里还要区分“地址能创建”和“邮件能收到”：即使 `/api/new_address` 创建成功，如果 Cloudflare Email Routing
+> 没有把该域名或子域名的来信转发到 Worker，后台地址列表里的 `Mail Count` 仍然会是 `0`。
+> 如果你在 Cloudflare `Email Routing -> 活动日志` 里看到状态是“已接收”，但结果是“已删除”，通常表示邮件在
+> Cloudflare 侧被规则直接丢弃了，并没有进入本项目的 Worker。
 
 ## 默认唯一四级域名模式
 
@@ -80,3 +85,7 @@ ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH = true
 > 子域名邮箱路由。
 >
 > 如果你在管理后台里保存过这个开关，后续也可以通过“跟随环境变量”把它恢复到未设置状态，再重新回退到 env 默认值。
+>
+> 这意味着后端现在可以允许 `foo.bar.example.com` 这类更深层的子域名创建地址，但真正收信仍取决于
+> Cloudflare 是否对 `bar.example.com` 或更深层级配置了 Email Routing 规则。仅有 MX 记录、Worker
+> 自定义域或创建接口放行，并不足以保证邮件最终进入 Worker。

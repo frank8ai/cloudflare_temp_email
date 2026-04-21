@@ -448,7 +448,14 @@ export const newAddress = async (
     if (!normalizedDomain || (!matchedAllowDomain && managedBaseDomains.length === 0)) {
         throw new Error(msgs.InvalidDomainMsg)
     }
-    if (enableRandomSubdomain && !allowRandomSubdomainForDomain(c, normalizedDomain, randomSubdomainDomains)) {
+    const allowRandomSubdomain = enableRandomSubdomain
+        ? allowRandomSubdomainForDomain(c, normalizedDomain, randomSubdomainDomains)
+        || (
+            !!matchedAllowDomain
+            && allowRandomSubdomainForDomain(c, matchedAllowDomain, randomSubdomainDomains)
+        )
+        : true;
+    if (!allowRandomSubdomain) {
         throw new Error(msgs.RandomSubdomainNotAllowedMsg)
     }
 

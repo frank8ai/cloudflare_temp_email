@@ -39,6 +39,12 @@ RANDOM_SUBDOMAIN_LENGTH = 8
 > If you use the admin panel, you can also override this list there via
 > "Random Subdomain Allowed Domains". When no admin value has been saved, runtime falls back to
 > `RANDOM_SUBDOMAIN_DOMAINS`; saving **Follow Environment Variable** clears the admin override.
+>
+> Also keep "address can be created" separate from "mail can be received": even if `/api/new_address`
+> succeeds, the mailbox list can still show `Mail Count = 0` when Cloudflare Email Routing is not
+> forwarding that domain or subdomain into the Worker. If the Cloudflare `Email Routing -> Activity`
+> page shows "received" but the result is "deleted", the message was dropped by Cloudflare-side
+> routing rules before it reached this project's Worker.
 
 ## Default Unique Four-level Mailbox Domains
 
@@ -82,3 +88,8 @@ addresses can be created through `/api/new_address` or `/admin/new_address`:
 > default domain dropdown, and it does not create Cloudflare-side subdomain mail routes for you.
 >
 > If the admin panel has already saved an override once, you can switch it back to **Follow Environment Variable** to clear the override and return to env fallback behavior.
+>
+> In practice, this means the backend may allow addresses such as `foo.bar.example.com`, but actual
+> mail reception still depends on Cloudflare Email Routing being configured for `bar.example.com` or
+> the deeper subdomain you are using. MX records, Worker custom domains, or successful address
+> creation alone are not enough to guarantee delivery into the Worker.

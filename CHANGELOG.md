@@ -24,6 +24,8 @@
 
 ### Improvements
 
+- docs: |Subdomain| 补充“创建成功不等于能收信”的排障说明，明确 Cloudflare 活动日志显示“已接收/已删除”且后台 `Mail Count = 0` 时，问题在 Email Routing 规则未把邮件投递到 Worker
+
 ## v1.6.0(main)
 
 ### Features
