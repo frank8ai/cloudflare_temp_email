@@ -5,7 +5,7 @@ import { WorkerMailerOptions } from 'worker-mailer';
 import { getBooleanValue, getDomains, getStringArray, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList, hashPassword, getJsonObjectValue, getRandomSubdomainDomains, getManagedOperationalDomainsFromBaseDomains, getExpandedDomainSetFromBaseDomains, getConfiguredDefaultDomains } from './utils';
 import { unbindTelegramByAddress } from './telegram_api/common';
 import { CONSTANTS } from './constants';
-import { AddressCreationSettings, AdminWebhookSettings, WebhookMail, WebhookSettings } from './models';
+import { AddressCreationSettings, AdminWebhookSettings, RandomSubdomainSettings, WebhookMail, WebhookSettings } from './models';
 import i18n from './i18n';
 import { allocateManagedMailboxDomain, pickManagedBaseDomains, shouldAllocateManagedMailboxDomain } from './managed_mailbox_allocator.ts';
 
@@ -17,6 +17,20 @@ const DOMAIN_LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 const normalizeDomainValue = (domain: string): string => {
     return domain.trim().toLowerCase();
+}
+
+const normalizeDomainList = (domains: string[]): string[] => {
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (const domain of domains) {
+        const value = normalizeDomainValue(domain);
+        if (!value || seen.has(value)) {
+            continue;
+        }
+        seen.add(value);
+        normalized.push(value);
+    }
+    return normalized;
 }
 
 const isValidDomainLabel = (label: string): boolean => {
@@ -113,10 +127,11 @@ const generateRandomSubdomain = (c: Context<HonoCustomType>): string => {
 
 const allowRandomSubdomainForDomain = (
     c: Context<HonoCustomType>,
-    domain: string
+    domain: string,
+    effectiveDomains?: string[]
 ): boolean => {
     const normalizedDomain = normalizeDomainValue(domain);
-    return getRandomSubdomainDomains(c)
+    return (effectiveDomains || getRandomSubdomainDomains(c))
         .map((item) => normalizeDomainValue(item))
         .includes(normalizedDomain);
 }
@@ -134,6 +149,39 @@ export const getAddressCreationSettings = async (
         c, CONSTANTS.ADDRESS_CREATION_SETTINGS_KEY
     );
     return new AddressCreationSettings(value);
+}
+
+export const getRandomSubdomainSettings = async (
+    c: Context<HonoCustomType>
+): Promise<RandomSubdomainSettings> => {
+    const value = await getJsonSetting<RandomSubdomainSettings>(
+        c, CONSTANTS.RANDOM_SUBDOMAIN_SETTINGS_KEY
+    );
+    return new RandomSubdomainSettings(value);
+}
+
+export const getRandomSubdomainStatus = async (
+    c: Context<HonoCustomType>,
+    existingSettings?: RandomSubdomainSettings
+): Promise<{
+    envDomains: string[],
+    storedDomains: string[] | undefined,
+    effectiveDomains: string[],
+}> => {
+    const envDomains = normalizeDomainList(getRandomSubdomainDomains(c));
+    const randomSubdomainSettings = existingSettings || await getRandomSubdomainSettings(c);
+    const storedDomains = Array.isArray(randomSubdomainSettings.domains)
+        ? normalizeDomainList(randomSubdomainSettings.domains)
+        : undefined;
+    const effectiveDomains = typeof storedDomains !== 'undefined'
+        ? storedDomains
+        : envDomains;
+
+    return {
+        envDomains,
+        storedDomains,
+        effectiveDomains,
+    };
 }
 
 export const getAddressCreationSubdomainMatchStatus = async (
@@ -392,6 +440,7 @@ export const newAddress = async (
     const managedBaseDomains = pickManagedBaseDomains(domain, managedOperationalDomains);
     const normalizedDomain = (domain || '').trim().toLowerCase();
     const { effectiveEnabled: enableSubdomainMatch } = await getAddressCreationSubdomainMatchStatus(c);
+    const { effectiveDomains: randomSubdomainDomains } = await getRandomSubdomainStatus(c);
     const matchedAllowDomain = normalizedDomain
         ? findMatchedAllowedDomain(normalizedDomain, allowDomains, enableSubdomainMatch)
         : null;
@@ -399,7 +448,7 @@ export const newAddress = async (
     if (!normalizedDomain || (!matchedAllowDomain && managedBaseDomains.length === 0)) {
         throw new Error(msgs.InvalidDomainMsg)
     }
-    if (enableRandomSubdomain && !allowRandomSubdomainForDomain(c, normalizedDomain)) {
+    if (enableRandomSubdomain && !allowRandomSubdomainForDomain(c, normalizedDomain, randomSubdomainDomains)) {
         throw new Error(msgs.RandomSubdomainNotAllowedMsg)
     }
 

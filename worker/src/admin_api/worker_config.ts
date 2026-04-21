@@ -5,9 +5,11 @@ import { CONSTANTS } from '../constants';
 import { isS3Enabled } from '../mails_api/s3_attachment';
 import { CURATED_MANAGED_PREFIXES, BLOCKED_MANAGED_PREFIXES } from '../mailbox_domain_policy.ts';
 import { getManagedAllocatorStats } from '../managed_mailbox_allocator.ts';
+import { getRandomSubdomainStatus } from '../common.ts';
 
 export default {
     getConfig: async (c: Context<HonoCustomType>) => {
+        const randomSubdomainStatus = await getRandomSubdomainStatus(c);
         const managedStats = getManagedAllocatorStats(
             utils.getConfiguredDomains(c),
             utils.getStringArray(c.env.DOMAIN_LABELS),
@@ -32,7 +34,9 @@ export default {
             "DEFAULT_DOMAINS": utils.getConfiguredDefaultDomains(c),
             "DOMAINS": utils.getConfiguredDomains(c),
             "ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH": utils.getBooleanValue(c.env.ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH),
-            "RANDOM_SUBDOMAIN_DOMAINS": utils.getRandomSubdomainDomains(c),
+            "RANDOM_SUBDOMAIN_DOMAINS": randomSubdomainStatus.effectiveDomains,
+            "RANDOM_SUBDOMAIN_DOMAINS_ENV": randomSubdomainStatus.envDomains,
+            "RANDOM_SUBDOMAIN_DOMAINS_STORED": randomSubdomainStatus.storedDomains,
             "RANDOM_SUBDOMAIN_LENGTH": utils.getIntValue(c.env.RANDOM_SUBDOMAIN_LENGTH, 8),
             "DOMAIN_LABELS": utils.getStringArray(c.env.DOMAIN_LABELS),
             "MANAGED_PREFIX_POLICY_COUNT": CURATED_MANAGED_PREFIXES.length,

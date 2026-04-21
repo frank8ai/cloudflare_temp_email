@@ -4,6 +4,7 @@ import utils from './utils';
 import { CONSTANTS } from './constants';
 import { isS3Enabled } from './mails_api/s3_attachment';
 import { isAnySendMailEnabled } from './common';
+import { getRandomSubdomainStatus } from './common';
 
 const api = new Hono<HonoCustomType>
 
@@ -16,6 +17,8 @@ api.get('/open_api/settings', async (c) => {
         needAuth = !auth || !passwords.includes(auth);
     }
 
+    const { effectiveDomains: randomSubdomainDomains } = await getRandomSubdomainStatus(c);
+
     return c.json({
         "title": c.env.TITLE,
         "announcement": utils.getStringValue(c.env.ANNOUNCEMENT),
@@ -26,7 +29,7 @@ api.get('/open_api/settings', async (c) => {
         "maxAddressLen": utils.getIntValue(c.env.MAX_ADDRESS_LEN, 30),
         "defaultDomains": utils.getDefaultDomains(c),
         "domains": utils.getDomains(c),
-        "randomSubdomainDomains": utils.getRandomSubdomainDomains(c),
+        "randomSubdomainDomains": randomSubdomainDomains,
         "domainLabels": utils.getDomains(c),
         "managedPrefixes": utils.getStringArray(c.env.DOMAIN_LABELS),
         "needAuth": needAuth,

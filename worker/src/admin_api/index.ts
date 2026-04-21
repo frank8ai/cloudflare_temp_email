@@ -2,8 +2,8 @@ import { Hono } from 'hono'
 import { Jwt } from 'hono/utils/jwt'
 
 import i18n from '../i18n'
-import { sendAdminInternalMail, getJsonSetting, saveSetting, getUserRoles, getBooleanValue, hashPassword } from '../utils'
-import { newAddress, handleListQuery, getAddressCreationSettings, getAddressCreationSubdomainMatchStatus } from '../common'
+import { sendAdminInternalMail, getJsonSetting, saveSetting, getUserRoles, getBooleanValue, hashPassword, getDomains } from '../utils'
+import { newAddress, handleListQuery, getAddressCreationSettings, getAddressCreationSubdomainMatchStatus, getRandomSubdomainSettings, getRandomSubdomainStatus } from '../common'
 import { CONSTANTS } from '../constants'
 import cleanup_api from './cleanup_api'
 import admin_user_api from './admin_user_api'
@@ -63,6 +63,58 @@ const normalizeAddressCreationSettingsUpdate = (
         shouldUpdate: true,
         shouldClear: false,
         nextEnableSubdomainMatch,
+    };
+}
+
+const normalizeRandomSubdomainSettingsUpdate = (
+    value: unknown,
+    allowedDomains: string[],
+): {
+    shouldUpdate: boolean,
+    shouldClear: boolean,
+    nextDomains?: string[],
+} | null => {
+    if (typeof value === 'undefined') {
+        return {
+            shouldUpdate: false,
+            shouldClear: false,
+        };
+    }
+    if (value === null) {
+        return {
+            shouldUpdate: true,
+            shouldClear: true,
+        };
+    }
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const allowSet = new Set(
+        allowedDomains.map((domain) => domain.trim().toLowerCase())
+    );
+    const seen = new Set<string>();
+    const nextDomains: string[] = [];
+
+    for (const item of value) {
+        if (typeof item !== 'string') {
+            return null;
+        }
+        const normalized = item.trim().toLowerCase();
+        if (!normalized || seen.has(normalized)) {
+            continue;
+        }
+        if (!allowSet.has(normalized)) {
+            return null;
+        }
+        seen.add(normalized);
+        nextDomains.push(normalized);
+    }
+
+    return {
+        shouldUpdate: true,
+        shouldClear: false,
+        nextDomains,
     };
 }
 
@@ -346,6 +398,8 @@ api.get('/admin/account_settings', async (c) => {
         const noLimitSendAddressList = await getJsonSetting(c, CONSTANTS.NO_LIMIT_SEND_ADDRESS_LIST_KEY);
         const addressCreationSettings = await getAddressCreationSettings(c);
         const addressCreationSubdomainMatchStatus = await getAddressCreationSubdomainMatchStatus(c, addressCreationSettings);
+        const randomSubdomainSettings = await getRandomSubdomainSettings(c);
+        const randomSubdomainStatus = await getRandomSubdomainStatus(c, randomSubdomainSettings);
         const sendMailLimitConfig = await getSendMailLimitConfig(c);
         return c.json({
             blockList: blockList || [],
@@ -358,6 +412,10 @@ api.get('/admin/account_settings', async (c) => {
                 ? { enableSubdomainMatch: addressCreationSettings.enableSubdomainMatch }
                 : {},
             addressCreationSubdomainMatchStatus,
+            randomSubdomainSettings: Array.isArray(randomSubdomainSettings.domains)
+                ? { domains: randomSubdomainSettings.domains }
+                : {},
+            randomSubdomainStatus,
             sendMailLimitConfig,
         })
     } catch (error) {
@@ -372,13 +430,20 @@ api.post('/admin/account_settings', async (c) => {
     const {
         blockList, sendBlockList, noLimitSendAddressList,
         verifiedAddressList, fromBlockList, emailRuleSettings, addressCreationSettings,
-        sendMailLimitConfig
+        randomSubdomainSettings, sendMailLimitConfig
     } = await c.req.json();
     if (!blockList || !sendBlockList || !verifiedAddressList) {
         return c.text(msgs.InvalidInputMsg, 400)
     }
     const addressCreationSettingsUpdate = normalizeAddressCreationSettingsUpdate(addressCreationSettings);
     if (!addressCreationSettingsUpdate) {
+        return c.text(msgs.InvalidInputMsg, 400)
+    }
+    const randomSubdomainSettingsUpdate = normalizeRandomSubdomainSettingsUpdate(
+        randomSubdomainSettings,
+        getDomains(c),
+    );
+    if (!randomSubdomainSettingsUpdate) {
         return c.text(msgs.InvalidInputMsg, 400)
     }
     if (!c.env.SEND_MAIL && verifiedAddressList.length > 0) {
@@ -427,6 +492,20 @@ api.post('/admin/account_settings', async (c) => {
                 c, CONSTANTS.ADDRESS_CREATION_SETTINGS_KEY,
                 JSON.stringify({
                     enableSubdomainMatch: addressCreationSettingsUpdate.nextEnableSubdomainMatch
+                })
+            )
+        }
+    }
+    if (randomSubdomainSettingsUpdate.shouldUpdate) {
+        if (randomSubdomainSettingsUpdate.shouldClear) {
+            await c.env.DB.prepare(
+                `DELETE FROM settings WHERE key = ?`
+            ).bind(CONSTANTS.RANDOM_SUBDOMAIN_SETTINGS_KEY).run();
+        } else {
+            await saveSetting(
+                c, CONSTANTS.RANDOM_SUBDOMAIN_SETTINGS_KEY,
+                JSON.stringify({
+                    domains: randomSubdomainSettingsUpdate.nextDomains || []
                 })
             )
         }

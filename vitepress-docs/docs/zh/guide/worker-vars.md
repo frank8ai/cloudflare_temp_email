@@ -65,6 +65,10 @@
 > 管理后台提供三种显式状态：**跟随环境变量**、**强制开启**、**强制关闭**。当你选择
 > “跟随环境变量”并保存时，会清空后台覆盖，恢复到“未设置”的回退行为。
 >
+> `RANDOM_SUBDOMAIN_DOMAINS` 现在也支持被管理后台覆盖：后台未设置时回退到 env；
+> 一旦在后台保存了“随机子域名允许域名”列表，就会以后台列表为准；选择“跟随环境变量”
+> 并保存会清空后台覆盖，恢复为按 env 回退。
+>
 > `SEND_MAIL_DOMAINS` 只影响 `SEND_MAIL` binding 的兜底发信路径和 `/admin/send_mail_by_binding`。
 > 它不影响 Resend、SMTP、`verifiedAddressList` 等其他发信通道。
 

@@ -15,6 +15,7 @@
 ### Features
 
 - feat: |send mail| Recommend Cloudflare `send_email` binding as the default send channel. Domains onboarded to Email Routing without Resend/SMTP now automatically use the binding to send to arbitrary addresses (Workers Paid includes 3,000 msgs/month, $0.35/1000 beyond); existing `verifiedAddressList` / Resend / SMTP configurations remain fully compatible (#964)
+- feat: |Admin| Add a "Random Subdomain Allowed Domains" setting in admin account settings, allowing the admin panel to override `RANDOM_SUBDOMAIN_DOMAINS`; when unset it still falls back to env, and saving "Follow Environment Variable" clears the override
 
 ### Bug Fixes
 

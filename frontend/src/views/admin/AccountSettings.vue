@@ -8,6 +8,7 @@ import { api } from '../../api'
 
 const { loading, openSettings } = useGlobalState()
 const message = useMessage()
+const notification = useNotification()
 
 const { t } = useI18n({
     messages: {
@@ -60,6 +61,12 @@ const { t } = useI18n({
             create_address_subdomain_match_force_disable: 'Force Disable',
             create_address_subdomain_match_follow_env_note: 'Choosing "Follow Environment Variable" clears the admin override and returns to the unset state. The effective result is still controlled by the Worker env and the precedence rules.',
             create_address_subdomain_match_env_locked: 'Worker env ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH is currently false. The saved admin switch can be modified, but it will not take effect until env is enabled or removed.',
+            random_subdomain_domains: 'Random Subdomain Allowed Domains',
+            random_subdomain_domains_tip: 'Only these domains can use automatic random subdomains during address creation.',
+            random_subdomain_domains_note: 'Choose "Follow Environment Variable" to clear the admin override. If you save a custom list, it fully replaces the environment variable list.',
+            random_subdomain_domains_follow_env: 'Follow Environment Variable',
+            random_subdomain_domains_custom: 'Use Custom List',
+            random_subdomain_domains_placeholder: 'Select domains that can use random subdomains',
         },
         zh: {
             tip: '您可以手动输入以下多选输入框, 回车增加',
@@ -110,6 +117,12 @@ const { t } = useI18n({
             create_address_subdomain_match_force_disable: '强制关闭',
             create_address_subdomain_match_follow_env_note: '选择“跟随环境变量”会清空后台覆盖，恢复为未设置状态；最终是否开启仍由 Worker env 和优先级规则决定。',
             create_address_subdomain_match_env_locked: '当前 Worker 环境变量 ENABLE_CREATE_ADDRESS_SUBDOMAIN_MATCH 为 false。后台开关仍可保存，但在 env 打开或移除前不会生效。',
+            random_subdomain_domains: '随机子域名允许域名',
+            random_subdomain_domains_tip: '只有这里允许的域名，创建邮箱时才可以自动挂随机子域名。',
+            random_subdomain_domains_note: '选择“跟随环境变量”会清空后台覆盖；一旦保存自定义列表，就会完整替代环境变量里的列表。',
+            random_subdomain_domains_follow_env: '跟随环境变量',
+            random_subdomain_domains_custom: '使用自定义列表',
+            random_subdomain_domains_placeholder: '选择允许随机子域名的域名',
         }
     }
 });
@@ -130,7 +143,13 @@ const ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE = {
 }
 const DEFAULT_SEND_MAIL_DAILY_LIMIT = 100
 const DEFAULT_SEND_MAIL_MONTHLY_LIMIT = 3000
+const RANDOM_SUBDOMAIN_MODE = {
+    FOLLOW_ENV: 'follow_env',
+    CUSTOM: 'custom'
+}
 const addressCreationSubdomainMatchMode = ref(ADDRESS_CREATION_SUBDOMAIN_MATCH_MODE.FOLLOW_ENV)
+const randomSubdomainMode = ref(RANDOM_SUBDOMAIN_MODE.FOLLOW_ENV)
+const randomSubdomainDomains = ref([])
 const sendMailDailyLimitEnabled = ref(false)
 const sendMailMonthlyLimitEnabled = ref(false)
 const sendMailDailyLimit = ref(DEFAULT_SEND_MAIL_DAILY_LIMIT)
@@ -140,6 +159,11 @@ const addressCreationSubdomainMatchStatus = ref({
     envEnabled: false,
     storedEnabled: undefined,
     effectiveEnabled: false
+})
+const randomSubdomainStatus = ref({
+    envDomains: [],
+    storedDomains: undefined,
+    effectiveDomains: []
 })
 const subdomainMatchEnvLocked = computed(() => {
     return addressCreationSubdomainMatchStatus.value.envConfigured
@@ -161,6 +185,19 @@ const subdomainMatchModeOptions = computed(() => {
         }
     ]
 })
+const randomSubdomainModeOptions = computed(() => {
+    return [
+        {
+            value: RANDOM_SUBDOMAIN_MODE.FOLLOW_ENV,
+            label: t('random_subdomain_domains_follow_env')
+        },
+        {
+            value: RANDOM_SUBDOMAIN_MODE.CUSTOM,
+            label: t('random_subdomain_domains_custom')
+        }
+    ]
+})
+const domainOptions = computed(() => openSettings.value?.domains || [])
 
 const showEmailForwardingModal = ref(false)
 const emailForwardingList = ref([])
@@ -332,6 +369,19 @@ const getSubdomainMatchPayloadValue = (mode) => {
     return null
 }
 
+const getRandomSubdomainModeByStoredValue = (storedDomains) => {
+    return Array.isArray(storedDomains)
+        ? RANDOM_SUBDOMAIN_MODE.CUSTOM
+        : RANDOM_SUBDOMAIN_MODE.FOLLOW_ENV
+}
+
+const getRandomSubdomainPayloadValue = () => {
+    if (randomSubdomainMode.value === RANDOM_SUBDOMAIN_MODE.FOLLOW_ENV) {
+        return null
+    }
+    return randomSubdomainDomains.value || []
+}
+
 const getSendMailLimitPayload = () => {
     return {
         dailyEnabled: sendMailDailyLimitEnabled.value,
@@ -380,6 +430,19 @@ const fetchData = async ({ suppressErrorMessage = false } = {}) => {
         addressCreationSubdomainMatchMode.value = getSubdomainMatchModeByStoredValue(
             addressCreationSubdomainMatchStatus.value.storedEnabled
         )
+        randomSubdomainStatus.value = {
+            envDomains: res.randomSubdomainStatus?.envDomains || [],
+            storedDomains: Array.isArray(res.randomSubdomainStatus?.storedDomains)
+                ? res.randomSubdomainStatus.storedDomains
+                : undefined,
+            effectiveDomains: res.randomSubdomainStatus?.effectiveDomains || []
+        }
+        randomSubdomainMode.value = getRandomSubdomainModeByStoredValue(
+            randomSubdomainStatus.value.storedDomains
+        )
+        randomSubdomainDomains.value = Array.isArray(randomSubdomainStatus.value.storedDomains)
+            ? [...randomSubdomainStatus.value.storedDomains]
+            : [...randomSubdomainStatus.value.effectiveDomains]
         const sendMailLimitConfig = res.sendMailLimitConfig
         sendMailDailyLimitEnabled.value = !!sendMailLimitConfig?.dailyEnabled
         sendMailMonthlyLimitEnabled.value = !!sendMailLimitConfig?.monthlyEnabled
@@ -412,6 +475,7 @@ const save = async () => {
             addressCreationSettings: {
                 enableSubdomainMatch: getSubdomainMatchPayloadValue(addressCreationSubdomainMatchMode.value)
             },
+            randomSubdomainSettings: getRandomSubdomainPayloadValue(),
             sendMailLimitConfig: getSendMailLimitPayload()
         }
         await api.fetch(`/admin/account_settings`, {
@@ -426,6 +490,7 @@ const save = async () => {
 
     try {
         await fetchData({ suppressErrorMessage: true })
+        await api.getOpenSettings(message, notification)
     } catch (error) {
         console.warn('Failed to refresh account settings after save', error)
         message.warning(error.message || "error");
@@ -555,6 +620,33 @@ onMounted(async () => {
                     <n-alert v-if="subdomainMatchEnvLocked" type="warning" :show-icon="false" :bordered="false">
                         {{ t('create_address_subdomain_match_env_locked') }}
                     </n-alert>
+                </n-flex>
+            </n-form-item-row>
+            <n-form-item-row :label="t('random_subdomain_domains')">
+                <n-flex vertical style="width: 100%;">
+                    <n-radio-group v-model:value="randomSubdomainMode">
+                        <n-space vertical size="small">
+                            <n-radio v-for="item in randomSubdomainModeOptions" :key="item.value" :value="item.value">
+                                {{ item.label }}
+                            </n-radio>
+                        </n-space>
+                    </n-radio-group>
+                    <n-select
+                        v-model:value="randomSubdomainDomains"
+                        :disabled="randomSubdomainMode !== RANDOM_SUBDOMAIN_MODE.CUSTOM"
+                        :options="domainOptions"
+                        filterable
+                        multiple
+                        :consistent-menu-width="false"
+                        :placeholder="t('random_subdomain_domains_placeholder')"
+                        style="margin-top: 8px;"
+                    />
+                    <n-text depth="3">
+                        {{ t('random_subdomain_domains_tip') }}
+                    </n-text>
+                    <n-text depth="3">
+                        {{ t('random_subdomain_domains_note') }}
+                    </n-text>
                 </n-flex>
             </n-form-item-row>
             <n-form-item-row :label="t('email_forwarding_config')">

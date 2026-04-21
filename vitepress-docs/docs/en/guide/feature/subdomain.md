@@ -35,6 +35,10 @@ RANDOM_SUBDOMAIN_LENGTH = 8
 >
 > It does not automatically create Cloudflare-side subdomain mail routes or DNS records for you,
 > so make sure the base-domain/subdomain routing is already available first.
+>
+> If you use the admin panel, you can also override this list there via
+> "Random Subdomain Allowed Domains". When no admin value has been saved, runtime falls back to
+> `RANDOM_SUBDOMAIN_DOMAINS`; saving **Follow Environment Variable** clears the admin override.
 
 ## Default Unique Four-level Mailbox Domains
 

@@ -129,6 +129,16 @@ export class AddressCreationSettings {
     }
 }
 
+export class RandomSubdomainSettings {
+
+    domains: string[] | undefined;
+
+    constructor(data: RandomSubdomainSettings | undefined | null) {
+        const { domains } = data || {};
+        this.domains = Array.isArray(domains) ? domains : undefined;
+    }
+}
+
 export class UserInfo {
 
     geoData: GeoData;

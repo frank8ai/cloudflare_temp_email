@@ -69,6 +69,11 @@
 > and **Force Disable**. Saving **Follow Environment Variable** clears the admin override and returns
 > the feature to the "unset" fallback behavior.
 >
+> `RANDOM_SUBDOMAIN_DOMAINS` can now also be overridden in the admin panel. When no admin value has
+> been saved, runtime behavior falls back to the env value. Once the admin panel saves a
+> "random-subdomain allowed domains" list, that list becomes authoritative; saving **Follow
+> Environment Variable** clears the override and restores env fallback.
+>
 > `SEND_MAIL_DOMAINS` only affects the `SEND_MAIL` binding fallback path and
 > `/admin/send_mail_by_binding`. It does not affect Resend, SMTP, or `verifiedAddressList`.
 

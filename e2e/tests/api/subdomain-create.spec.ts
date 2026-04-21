@@ -9,8 +9,10 @@ const INVALID_EMPTY_PREFIX_DOMAIN = `.${TEST_DOMAIN}`;
 const INVALID_EMPTY_LABEL_DOMAIN = `a..b.${TEST_DOMAIN}`;
 const INVALID_OVERLONG_DOMAIN = `${'a.'.repeat(119)}${TEST_DOMAIN}`;
 const CREATE_ADDRESS_WORKER_URL = WORKER_URL_SUBDOMAIN || WORKER_URL;
+const RANDOM_SUBDOMAIN_DOMAIN = TEST_DOMAIN;
 let originalCreateAddressStoredEnabled: boolean | undefined;
 let originalEnvOffStoredEnabled: boolean | undefined;
+let originalCreateRandomSubdomainDomains: string[] | undefined;
 
 async function getAccountSettings(request: any, workerUrl: string) {
   const res = await request.get(`${workerUrl}/admin/account_settings`);
@@ -21,6 +23,7 @@ async function getAccountSettings(request: any, workerUrl: string) {
 function buildAccountSettingsPayload(
   current: any,
   addressCreationSettings?: { enableSubdomainMatch?: boolean | null },
+  randomSubdomainSettings?: string[] | null,
   overrides: Record<string, unknown> = {}
 ) {
   return {
@@ -32,6 +35,9 @@ function buildAccountSettingsPayload(
     emailRuleSettings: current.emailRuleSettings || {},
     ...(typeof addressCreationSettings !== 'undefined'
       ? { addressCreationSettings }
+      : {}),
+    ...(typeof randomSubdomainSettings !== 'undefined'
+      ? { randomSubdomainSettings }
       : {}),
     ...overrides,
   };
@@ -51,6 +57,18 @@ async function saveSubdomainMatchSetting(
   expect(res.ok()).toBe(true);
 }
 
+async function saveRandomSubdomainSettings(
+  request: any,
+  workerUrl: string,
+  domains: string[] | null
+) {
+  const current = await getAccountSettings(request, workerUrl);
+  const res = await request.post(`${workerUrl}/admin/account_settings`, {
+    data: buildAccountSettingsPayload(current, undefined, domains),
+  });
+  expect(res.ok()).toBe(true);
+}
+
 async function restoreSubdomainMatchSetting(
   request: any,
   workerUrl: string,
@@ -63,10 +81,23 @@ async function restoreSubdomainMatchSetting(
   await saveSubdomainMatchSetting(request, workerUrl, null);
 }
 
+async function restoreRandomSubdomainSettings(
+  request: any,
+  workerUrl: string,
+  originalValue: string[] | undefined
+) {
+  if (Array.isArray(originalValue)) {
+    await saveRandomSubdomainSettings(request, workerUrl, originalValue);
+    return;
+  }
+  await saveRandomSubdomainSettings(request, workerUrl, null);
+}
+
 test.describe('Create Address Subdomain Match', () => {
   test.beforeAll(async ({ request }) => {
     const createAddressSettings = await getAccountSettings(request, CREATE_ADDRESS_WORKER_URL);
     originalCreateAddressStoredEnabled = createAddressSettings.addressCreationSubdomainMatchStatus?.storedEnabled;
+    originalCreateRandomSubdomainDomains = createAddressSettings.randomSubdomainStatus?.storedDomains;
 
     if (WORKER_URL_ENV_OFF) {
       const envOffSettings = await getAccountSettings(request, WORKER_URL_ENV_OFF);
@@ -76,6 +107,7 @@ test.describe('Create Address Subdomain Match', () => {
 
   test.afterEach(async ({ request }) => {
     await restoreSubdomainMatchSetting(request, CREATE_ADDRESS_WORKER_URL, originalCreateAddressStoredEnabled);
+    await restoreRandomSubdomainSettings(request, CREATE_ADDRESS_WORKER_URL, originalCreateRandomSubdomainDomains);
     if (WORKER_URL_ENV_OFF) {
       await restoreSubdomainMatchSetting(request, WORKER_URL_ENV_OFF, originalEnvOffStoredEnabled);
     }
@@ -194,5 +226,56 @@ test.describe('Create Address Subdomain Match', () => {
     });
     expect(res.ok()).toBe(false);
     expect(await res.text()).toContain('Invalid domain');
+  });
+
+  test('admin random subdomain settings can enable creation and clear back to env fallback', async ({ request }) => {
+    await saveRandomSubdomainSettings(request, CREATE_ADDRESS_WORKER_URL, [RANDOM_SUBDOMAIN_DOMAIN]);
+
+    const enabledRes = await request.post(`${CREATE_ADDRESS_WORKER_URL}/admin/new_address`, {
+      data: {
+        name: `random-sub-${Date.now()}`,
+        domain: RANDOM_SUBDOMAIN_DOMAIN,
+        enableRandomSubdomain: true,
+      },
+    });
+    expect(enabledRes.ok()).toBe(true);
+    const enabledBody = await enabledRes.json();
+    expect(enabledBody.address).toMatch(new RegExp(`@[^.]+\\.${TEST_DOMAIN.replace(/\./g, '\\.')}$`));
+
+    await saveRandomSubdomainSettings(request, CREATE_ADDRESS_WORKER_URL, null);
+
+    const afterClearRes = await request.post(`${CREATE_ADDRESS_WORKER_URL}/admin/new_address`, {
+      data: {
+        name: `random-sub-clear-${Date.now()}`,
+        domain: RANDOM_SUBDOMAIN_DOMAIN,
+        enableRandomSubdomain: true,
+      },
+    });
+    expect(afterClearRes.ok()).toBe(false);
+    expect(await afterClearRes.text()).toContain('Random subdomain is not enabled for this domain');
+  });
+
+  test('invalid random subdomain settings payload does not partially persist', async ({ request }) => {
+    const current = await getAccountSettings(request, CREATE_ADDRESS_WORKER_URL);
+    const uniqueBlockedKeyword = `random-should-not-persist-${Date.now()}`;
+
+    const res = await request.post(`${CREATE_ADDRESS_WORKER_URL}/admin/account_settings`, {
+      data: buildAccountSettingsPayload(
+        current,
+        undefined,
+        ['not-configured.example.com'],
+        {
+          blockList: [...(current.blockList || []), uniqueBlockedKeyword],
+        }
+      ),
+    });
+
+    expect(res.status()).toBe(400);
+
+    const after = await getAccountSettings(request, CREATE_ADDRESS_WORKER_URL);
+    expect(after.blockList || []).toEqual(current.blockList || []);
+    expect(after.randomSubdomainStatus?.storedDomains).toEqual(
+      current.randomSubdomainStatus?.storedDomains
+    );
   });
 });
